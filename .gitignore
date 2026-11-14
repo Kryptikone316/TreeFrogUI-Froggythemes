@@ -1,0 +1,9 @@
+/*.mipsel
+/*.mipsel.*
+/froggythemes.before-*.mipsel
+/build/
+/dist/
+/pack/log.txt
+/pack/*.zip
+*.swp
+*~
