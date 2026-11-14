@@ -7,7 +7,7 @@
 | `Batocera_SynthWave` | Carbon lineage; `https://github.com/EmuELEC/es-theme-EmuELEC-carbon` | CC BY-NC-SA terms present in source readme | Review |
 | `muOS_MuBuntu` | Local archive credits ToineAn; source URL still to verify | License not present in archive | Hold |
 | `EmuELEC_Alekfull_ARTFLIX` | `https://github.com/fagnerpc/Alekfull-ARTFLIX` | CC BY-NC-SA 4.0 terms present | Review |
-| `EmuELEC_Alekfull_NX` | `https://github.com/EmuELEC/es-theme-New-EmuELEC` | Upstream source terms require confirmation | Review |
+| `EmuELEC_Alekfull_NX` | `https://github.com/fagnerpc/Alekfull-NX` | Upstream source terms require confirmation | Review |
 | `EmuELEC_Alekfull_SOLO` | `https://github.com/fagnerpc/Alekfull-SOLO` | Upstream source terms require confirmation | Review |
 | `EmuELEC_Carbon` | `https://github.com/EmuELEC/es-theme-EmuELEC-carbon` | CC BY-NC-SA terms present | Review |
 | `EmuELEC_Clean_Style` | `https://github.com/EmuELEC/es-theme-EmuELEC-clean-style` | CC BY-NC-SA, with third-party credits | Review |
