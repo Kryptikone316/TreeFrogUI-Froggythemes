@@ -13,7 +13,6 @@
 | `EmuELEC_Clean_Style` | `https://github.com/EmuELEC/es-theme-EmuELEC-clean-style` | CC BY-NC-SA, with third-party credits | Review |
 | `EmuELEC_Crystal_Blue` | `https://github.com/dm2912/Crystal` | Non-commercial notice; license/credits file requires review | Review |
 | `EmuELEC_Epic_Noir` | `https://github.com/c64-dev/es-theme-epicnoir` | CC BY-NC-SA 4.0 | Review |
-| `EmuELEC_Roleta` | `https://github.com/EmuELEC/es-theme-EmuELEC-Roleta`, based on `https://github.com/RetroHursty69/es-theme-HyperMameinaBox` | No explicit license or redistribution terms found in Roleta or its cited ancestor; README attribution retained | Hold |
 | `EmuELEC_Tronkyfran` | `https://github.com/HerbFargus/es-theme-tronkyfran` | CC terms; attribution, change notice, same-license sharing, non-commercial | Review |
 | Remaining EmuELEC packs | See local `PORT_SOURCES.md` before adding | Several are unclear or personal-use-only | Hold/Review |
 

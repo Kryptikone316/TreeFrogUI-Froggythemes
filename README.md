@@ -25,6 +25,16 @@ original project artwork released under CC0 1.0 Universal. Third-party packs
 remain outside the distributable set until their upstream license and source
 history are verified.
 
+### Bring-your-own-theme candidates
+
+`EmuELEC_Roleta` may be considered a bring-your-own-theme candidate for users
+who obtain it independently. It is not distributed, packaged, or included in
+our presets because its README identifies a HyperMameinaBox ancestor and
+changes from `drixplm`, but neither source provides explicit redistribution
+terms or a license/credits notice. Users must obtain permission from the
+relevant rights holders and preserve the attribution chain before sharing or
+redistributing it.
+
 The standalone converter runs locally with Python and ImageMagick. It creates
 native-size background JPEGs for the selected device family and optimized
 system-icon PNGs while showing scan and conversion progress. See
