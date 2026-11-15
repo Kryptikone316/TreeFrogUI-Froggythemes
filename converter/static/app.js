@@ -168,6 +168,9 @@ async function startConversion() {
     overwrite: $('overwrite').checked,
   };
   try {
+    $('installStep').disabled = true;
+    $('integrityStatus').textContent = 'Waiting for the conversion integrity check.';
+    $('integrityStatus').className = 'integrity';
     const result = await postJson('/api/convert', payload);
     state.jobId = result.job_id;
     $('progressTitle').textContent = 'Conversion in progress';
@@ -197,10 +200,14 @@ async function pollJob() {
     if (job.state === 'complete') {
       $('progressTitle').textContent = 'Conversion complete';
       $('cancelButton').classList.add('hidden');
-      $('result').textContent = `Packs staged under “${$('outputRoot').value}”. Review SOURCE-NOTES.txt before redistribution.`;
+      const integrity = job.integrity || {};
+      if (job.output_root) $('outputRoot').value = job.output_root;
+      $('result').textContent = `Integrity check passed: ${integrity.backgrounds || 0} backgrounds and ${integrity.icons || 0} icons verified. Packs staged under “${job.output_root || $('outputRoot').value}”.`;
       $('result').className = 'result good';
       $('installStep').disabled = false;
       $('openOutputButton').classList.remove('hidden');
+      $('integrityStatus').textContent = 'Integrity check passed. SHA-256 manifests, dimensions, formats, channels, and file counts are valid.';
+      $('integrityStatus').className = 'integrity good';
       $('deployLog').textContent = 'Choose a mounted SD card root to continue.';
       showStep('install');
       return;
@@ -208,8 +215,12 @@ async function pollJob() {
     if (job.state === 'error' || job.state === 'cancelled') {
       $('progressTitle').textContent = job.state === 'cancelled' ? 'Conversion cancelled' : 'Conversion needs attention';
       $('cancelButton').classList.add('hidden');
-      $('result').textContent = job.error || 'The conversion did not complete.';
+      const integrity = job.integrity || {};
+      const message = integrity.state === 'failed' ? `Integrity check failed: ${integrity.message}` : (job.error || 'The conversion did not complete.');
+      $('result').textContent = message;
       $('result').className = 'result bad';
+      $('integrityStatus').textContent = message;
+      $('integrityStatus').className = 'integrity bad';
       return;
     }
     setTimeout(pollJob, 250);
@@ -281,21 +292,54 @@ async function pollDeploy() {
     $('deployProgressCount').textContent = `${job.completed} / ${total}`;
     $('deployProgressPercent').textContent = `${percent}%`;
     $('deployLog').textContent = (job.log || []).join('\n') || 'Preparing SD-card copy…';
+    if (job.card_root) $('cardRoot').value = job.card_root;
     if (job.state === 'complete') {
       $('deployResult').textContent = `Copied the generated pack files to ${job.card_root}. The SD card can now be safely unmounted and returned to the device.`;
       $('deployResult').className = 'result good';
+      $('integrityStatus').textContent = 'SD-card integrity check passed. The staged files were verified before commit.';
+      $('integrityStatus').className = 'integrity good';
       $('deployButton').disabled = false;
       return;
     }
     if (job.state === 'error' || job.state === 'cancelled') {
-      $('deployResult').textContent = job.error || 'The SD-card copy did not complete.';
+      const message = job.integrity && job.integrity.state === 'failed'
+        ? `SD-card integrity check failed: ${job.integrity.message}`
+        : (job.error || 'The SD-card copy did not complete.');
+      $('deployResult').textContent = message;
       $('deployResult').className = 'result bad';
+      $('integrityStatus').textContent = message;
+      $('integrityStatus').className = 'integrity bad';
       $('deployButton').disabled = false;
       return;
     }
     setTimeout(pollDeploy, 250);
   } catch (error) {
     $('deployLog').textContent += `\n${error.message}`;
+  }
+}
+
+async function recoverJob() {
+  try {
+    const response = await getJson('/api/current-job');
+    const job = response.job;
+    if (!job) return;
+    if (job.kind === 'deploy') {
+      state.deployJobId = job.id;
+      state.jobId = job.source_job_id;
+      $('installStep').disabled = false;
+      $('openOutputButton').classList.remove('hidden');
+      if (job.card_root) $('cardRoot').value = job.card_root;
+      showStep('install');
+      pollDeploy();
+      return;
+    }
+    state.jobId = job.id;
+    $('progressTitle').textContent = job.state === 'complete' ? 'Conversion complete' : 'Conversion in progress';
+    $('log').textContent = (job.log || []).join('\n') || 'Reconnected to the existing job…';
+    showStep('progress');
+    pollJob();
+  } catch (error) {
+    // A fresh server has no current job; the normal source screen remains available.
   }
 }
 
@@ -391,3 +435,4 @@ $('mode').addEventListener('change', () => {
 checkDependencies();
 loadConfig();
 updateOutputSpec();
+recoverJob();

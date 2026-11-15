@@ -27,6 +27,22 @@ requires a selected mounted card root containing the configured TreeFrogUI
 directory. Manual copying remains available through the OS file-explorer
 button.
 
+## Integrity and transaction boundaries
+
+Conversion and deployment are single active jobs. A browser reload asks
+`/api/current-job` for the queued, running, or most recent terminal job and
+continues polling it instead of starting another conversion. New conversion or
+deployment requests are rejected while a job is active.
+
+Generated packs are built below a job-specific temporary directory. The server
+writes `MANIFEST.sha256`, checks hashes, image format, native dimensions,
+channels, and icon limits, and only then atomically promotes the pack. SD-card
+deployment repeats validation after copying to a card-side staging directory;
+existing generated packs are moved aside only during the final commit and are
+restored if that commit fails. Temporary directories are removed on success or
+failure. `output/log.txt` is an append-only human-readable ledger containing
+job events and SHA-256 records for generated and copied files.
+
 Shutdown is also explicit. `/api/shutdown` accepts only the exact confirmation
 string `Yes`; it marks the server as closing, cancels queued/running jobs,
 waits up to ten seconds for ImageMagick or copy work to settle, and then calls

@@ -66,6 +66,22 @@ redistribution. The converter does not grant a license to third-party art.
 The output path can be changed in the Settings step. Select “Replace a
 generated pack” only when re-running a pack that already has converter notes.
 
+## Integrity check and ledger
+
+Conversion is transactional. The converter writes temporary pack folders, then
+checks every generated image before publishing it under `output/`. Backgrounds
+must be native-size JPEGs with no alpha channel; icons must be valid PNGs within
+the configured limit. Each published pack contains a `MANIFEST.sha256` file.
+The Install step remains disabled until these checks pass.
+
+Every conversion and SD-card copy appends to `output/log.txt`. The ledger records
+timestamps, job IDs, pack categories, file sizes, and SHA-256 hashes. The SD-card
+workflow validates the source pack, copies into a temporary card-side folder,
+validates that copy again, and only then commits it to the final TreeFrogUI
+directory. If a check fails, temporary files are removed and existing packs are
+left untouched. Review the readable error in the progress panel and `log.txt`,
+then correct the source or settings and start a new job.
+
 ## Optional SD-card installation
 
 After conversion, installation is user-triggered. Mount the SD card normally,

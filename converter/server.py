@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -119,6 +121,24 @@ def magick_command() -> Optional[str]:
     return None
 
 
+def identify_command() -> Optional[list[str]]:
+    tool = magick_command()
+    if not tool:
+        return None
+    if Path(tool).stem.lower() == "magick":
+        return [tool, "identify"]
+    identify = shutil.which("identify")
+    if not identify:
+        return None
+    try:
+        result = subprocess.run([identify, "-version"], capture_output=True, text=True, timeout=5)
+        if "ImageMagick" in (result.stdout + result.stderr):
+            return [identify]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
 def dependencies() -> dict:
     command = magick_command()
     version = ""
@@ -132,7 +152,7 @@ def dependencies() -> dict:
     return {
         "python": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
         "imagemagick": {"command": command, "version": version},
-        "ready": bool(command),
+        "ready": bool(command and identify_command()),
     }
 
 
@@ -210,6 +230,29 @@ def wait_for_jobs(timeout: float = 10.0) -> None:
         time.sleep(0.05)
 
 
+def public_job(job: dict) -> dict:
+    return {key: value for key, value in job.items() if key not in {"cancel", "process"}}
+
+
+def current_job_locked() -> Optional[dict]:
+    jobs = list(JOBS.values())
+    for job in reversed(jobs):
+        if job.get("state") in {"queued", "running"}:
+            return public_job(job)
+    for job in reversed(jobs):
+        if job.get("state") in {"complete", "error", "cancelled"}:
+            return public_job(job)
+    return None
+
+
+def active_job_error() -> Optional[str]:
+    for job in JOBS.values():
+        if job.get("state") in {"queued", "running"}:
+            label = "copy" if job.get("kind") == "deploy" else "conversion"
+            return f"A {label} job is already in progress. Wait for it to finish before starting another."
+    return None
+
+
 def run_image(job_id: str, command: list[str], label: str) -> None:
     with JOBS_LOCK:
         JOBS[job_id]["process"] = None
@@ -277,7 +320,168 @@ def make_notes(destination: Path, payload: dict, counts: dict, width: int, heigh
     (destination / "SOURCE-NOTES.txt").write_text("\n".join(notes) + "\n", encoding="utf-8")
 
 
+def image_hash(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def append_ledger(ledger_path: Path, job_id: str, event: str, **values) -> None:
+    fields = [time.strftime("%Y-%m-%dT%H:%M:%S%z"), f"job={job_id}", f"event={event}"]
+    for key, value in values.items():
+        safe_value = str(value).replace("\n", " ").replace("\r", " ")
+        fields.append(f"{key}={safe_value}")
+    with ledger_path.open("a", encoding="utf-8") as file:
+        file.write(" ".join(fields) + "\n")
+
+
+def write_manifest(destination: Path, category: str) -> None:
+    images = sorted(
+        path for path in destination.iterdir()
+        if path.is_file() and path.suffix.lower() in {".jpg", ".jpeg", ".png"}
+    )
+    lines = ["FroggyThemes manifest v1", f"category={category}", ""]
+    for path in images:
+        lines.append(f"{image_hash(path)}  {path.relative_to(destination).as_posix()}")
+    (destination / "MANIFEST.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def ledger_pack_files(ledger_path: Path, job_id: str, category: str,
+                      pack: Path, relative_root: Optional[Path] = None) -> None:
+    root = relative_root or pack
+    for file in sorted(path for path in pack.rglob("*") if path.is_file()):
+        append_ledger(
+            ledger_path, job_id, "file",
+            category=category,
+            path=file.relative_to(root).as_posix(),
+            bytes=file.stat().st_size,
+            sha256=image_hash(file),
+        )
+
+
+def panel_from_notes(pack: Path) -> tuple[int, int]:
+    notes = pack / "SOURCE-NOTES.txt"
+    if not notes.is_file():
+        raise ValueError(f"Missing SOURCE-NOTES.txt: {pack}")
+    for line in notes.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("Native panel:"):
+            value = line.split(":", 1)[1].strip().lower()
+            width, height = value.split("x", 1)
+            return int(width), int(height)
+    raise ValueError(f"Missing native panel metadata: {pack}")
+
+
+def verify_manifest(pack: Path, expected_category: Optional[str] = None) -> None:
+    manifest = pack / "MANIFEST.sha256"
+    if not manifest.is_file():
+        raise ValueError(f"Missing MANIFEST.sha256: {pack}")
+    listed = set()
+    category = None
+    for line in manifest.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line or line.startswith("FroggyThemes manifest") or line.startswith("category="):
+            if line.startswith("category="):
+                category = line.split("=", 1)[1].strip()
+            continue
+        try:
+            expected, relative = line.split(None, 1)
+        except ValueError as exc:
+            raise ValueError(f"Malformed manifest entry in {manifest}") from exc
+        relative = relative.strip()
+        path = (pack / relative).resolve()
+        if pack.resolve() not in path.parents or not path.is_file():
+            raise ValueError(f"Manifest references an invalid file: {relative}")
+        if image_hash(path) != expected:
+            raise ValueError(f"{path.name} does not match its SHA-256 manifest")
+        listed.add(relative)
+    if expected_category and category != expected_category:
+        raise ValueError(f"Manifest category mismatch in {manifest}")
+    actual = {
+        path.relative_to(pack).as_posix()
+        for path in pack.iterdir()
+        if path.is_file() and path.suffix.lower() in {".jpg", ".jpeg", ".png"}
+    }
+    if actual != listed:
+        raise ValueError(f"Manifest/file mismatch in {pack}")
+
+
+def identify_image(path: Path) -> tuple[str, int, int, str]:
+    command = identify_command()
+    if not command:
+        raise RuntimeError("ImageMagick identify was not found; output integrity cannot be checked.")
+    result = subprocess.run(
+        command + ["-format", "%m|%w|%h|%[channels]", str(path)],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        raise ValueError(f"Could not inspect {path.name}: {detail}")
+    try:
+        image_format, width, height, channels = result.stdout.strip().split("|", 3)
+        return image_format.upper(), int(width), int(height), channels.lower()
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"Unexpected identify output for {path.name}") from exc
+
+
+def validate_pack(pack: Path, category: str, expected_width: Optional[int] = None,
+                  expected_height: Optional[int] = None) -> None:
+    verify_manifest(pack, category)
+    images = sorted(path for path in pack.iterdir() if path.is_file() and path.suffix.lower() in {".jpg", ".jpeg", ".png"})
+    if not images:
+        raise ValueError(f"Pack contains no images: {pack}")
+    if category == "theme":
+        main = pack / "main.jpg"
+        if not main.is_file():
+            raise ValueError(f"Theme pack is missing main.jpg: {pack}")
+        width, height = panel_from_notes(pack)
+        if expected_width is not None and (width, height) != (expected_width, expected_height):
+            raise ValueError(f"Pack metadata panel mismatch: {pack}")
+        for image in images:
+            image_format, image_width, image_height, channels = identify_image(image)
+            if image_format != "JPEG" or (image_width, image_height) != (width, height) or "a" in channels:
+                raise ValueError(f"Invalid background output: {image}")
+    elif category == "icon":
+        max_width = int(CONFIG["output"]["icon_max_width"])
+        max_height = int(CONFIG["output"]["icon_max_height"])
+        for image in images:
+            image_format, image_width, image_height, channels = identify_image(image)
+            if image_format != "PNG" or image_width < 1 or image_height < 1 or image_width > max_width or image_height > max_height or "gray" in channels:
+                raise ValueError(f"Invalid icon output: {image}")
+    else:
+        raise ValueError(f"Unknown pack category: {category}")
+
+
+def commit_directories(staging_root: Path, staged_targets: list[tuple[str, Path, Path]]) -> None:
+    backups = []
+    moved = []
+    try:
+        for category, staged_target, final_target in staged_targets:
+            final_target.parent.mkdir(parents=True, exist_ok=True)
+            if final_target.exists():
+                if any(final_target.iterdir()):
+                    backup = staging_root / ".backups" / category / final_target.name
+                    backup.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(final_target, backup)
+                    backups.append((backup, final_target))
+                else:
+                    final_target.rmdir()
+            os.replace(staged_target, final_target)
+            moved.append(final_target)
+    except Exception:
+        for final_target in reversed(moved):
+            shutil.rmtree(final_target, ignore_errors=True)
+        for backup, final_target in reversed(backups):
+            if final_target.exists():
+                shutil.rmtree(final_target, ignore_errors=True)
+            os.replace(backup, final_target)
+        raise
+
+
 def convert_job(job_id: str, payload: dict) -> None:
+    output_root = None
+    staging_root = None
+    ledger_path = None
     try:
         tool = magick_command()
         if not tool:
@@ -291,6 +495,9 @@ def convert_job(job_id: str, payload: dict) -> None:
         pack_name = safe_pack_name(payload.get("pack_name", ""))
         output_root = path_from(payload.get("output_root"), must_exist=False)
         output_root.mkdir(parents=True, exist_ok=True)
+        ledger_path = output_root / "log.txt"
+        append_ledger(ledger_path, job_id, "conversion-start",
+                      source=payload.get("source_root", ""), pack=pack_name)
         dim = max(0, min(90, int(payload.get("dim", 35))))
         quality_limits = CONFIG["output"]
         quality = max(
@@ -331,24 +538,27 @@ def convert_job(job_id: str, payload: dict) -> None:
         if mode in {"icons", "both"}:
             targets.append(("icon", output_root / CONFIG["staging"]["icon_packs"] / pack_name))
         for _, target in targets:
-            target.mkdir(parents=True, exist_ok=True)
+            target.parent.mkdir(parents=True, exist_ok=True)
             marker = target / "SOURCE-NOTES.txt"
-            if any(target.iterdir()) and not payload.get("overwrite") and not marker.exists():
-                raise ValueError(f"Output already contains files: {target}. Choose another name or enable replacement.")
-            if payload.get("overwrite") and marker.exists():
-                marker_text = marker.read_text(encoding="utf-8", errors="replace")
-                if not marker_text.startswith("Generated by FroggyThemes Converter"):
+            if target.exists() and (not target.is_dir() or any(target.iterdir())) and not payload.get("overwrite"):
+                raise ValueError(f"Output already contains files: {target}. Enable replacement to update it.")
+            if target.exists() and (not target.is_dir() or any(target.iterdir())) and payload.get("overwrite"):
+                if not marker.is_file() or not marker.read_text(encoding="utf-8", errors="replace").startswith(
+                    "Generated by FroggyThemes Converter"
+                ):
                     raise ValueError(f"Refusing to replace an unrecognized output folder: {target}")
-                for child in target.iterdir():
-                    if child.is_file() and (child.suffix.lower() in {".jpg", ".jpeg", ".png"} or child.name == "SOURCE-NOTES.txt"):
-                        child.unlink()
+
+        staging_root = Path(tempfile.mkdtemp(prefix=f".froggythemes-{job_id}-", dir=output_root))
+        staged_targets = [(category, staging_root / category / target.name, target) for category, target in targets]
+        for _, staged_target, _ in staged_targets:
+            staged_target.mkdir(parents=True, exist_ok=True)
 
         update_job(job_id, state="running", total=total, completed=0, pack_name=pack_name,
                    device=device, width=width, height=height)
         completed = 0
         counts = {"backgrounds": 0, "icons": 0}
         if background_source:
-            destination = targets[0][1] / "main.jpg"
+            destination = staged_targets[0][1] / "main.jpg"
             run_image(job_id, background_command(tool, background_source, destination, dim, quality, width, height), "main background")
             completed += 1
             counts["backgrounds"] += 1
@@ -356,13 +566,13 @@ def convert_job(job_id: str, payload: dict) -> None:
             for alias, source in bg_plan:
                 if not source:
                     continue
-                destination = targets[0][1] / f"{alias}.jpg"
+                destination = staged_targets[0][1] / f"{alias}.jpg"
                 run_image(job_id, background_command(tool, source, destination, dim, quality, width, height), f"background {alias}")
                 completed += 1
                 counts["backgrounds"] += 1
                 update_job(job_id, completed=completed)
         if icon_root:
-            icon_target = targets[-1][1]
+            icon_target = staged_targets[-1][1]
             for alias, source in icon_plan:
                 if not source:
                     continue
@@ -371,15 +581,31 @@ def convert_job(job_id: str, payload: dict) -> None:
                 completed += 1
                 counts["icons"] += 1
                 update_job(job_id, completed=completed)
-        for _, target in targets:
-            make_notes(target, payload, counts, width, height)
+        for _, staged_target, _ in staged_targets:
+            make_notes(staged_target, payload, counts, width, height)
+        for category, staged_target, _ in staged_targets:
+            write_manifest(staged_target, category)
+            validate_pack(staged_target, category, width, height)
+            append_ledger(ledger_path, job_id, "integrity-pass", category=category, pack=staged_target.name)
+            ledger_pack_files(ledger_path, job_id, category, staged_target, staging_root)
+        commit_directories(staging_root, staged_targets)
+        shutil.rmtree(staging_root, ignore_errors=True)
         log_job(job_id, f"Finished: {counts['backgrounds']} backgrounds, {counts['icons']} icons")
         update_job(job_id, state="complete", completed=total,
                    outputs=[{"category": category, "path": str(target)} for category, target in targets],
-                   output_root=str(output_root), mode=mode)
+                   output_root=str(output_root), mode=mode,
+                   integrity={"state": "passed", "backgrounds": counts["backgrounds"], "icons": counts["icons"]})
     except Exception as exc:  # keep failures visible in the browser
+        if ledger_path:
+            try:
+                append_ledger(ledger_path, job_id, "integrity-fail", error=str(exc))
+            except OSError:
+                pass
+        if staging_root:
+            shutil.rmtree(staging_root, ignore_errors=True)
         log_job(job_id, str(exc))
-        update_job(job_id, state="cancelled" if "cancelled" in str(exc).lower() else "error", error=str(exc))
+        update_job(job_id, state="cancelled" if "cancelled" in str(exc).lower() else "error", error=str(exc),
+                   integrity={"state": "failed", "message": str(exc)})
 
 
 def card_info(value: str) -> dict:
@@ -399,6 +625,8 @@ def card_info(value: str) -> dict:
 
 
 def deploy_job(job_id: str, payload: dict) -> None:
+    staging_root = None
+    ledger_path = Path(payload["ledger_path"]) if payload.get("ledger_path") else None
     try:
         card = card_info(payload.get("card_root", ""))
         if not card["valid"]:
@@ -409,12 +637,14 @@ def deploy_job(job_id: str, payload: dict) -> None:
             raise ValueError("There are no converted packs to copy.")
         overwrite = bool(payload.get("overwrite"))
         copy_plan = []
+        staging_root = Path(tempfile.mkdtemp(prefix=f".froggythemes-install-{job_id}-", dir=card["frogui"]))
         for category, source in sources:
             if not source.is_dir() or category not in {"theme", "icon"}:
                 raise ValueError(f"Invalid converted pack path: {source}")
+            validate_pack(source, category)
             target_root = Path(card["theme_target"] if category == "theme" else card["icon_target"])
             target = target_root / source.name
-            if target.exists() and any(target.iterdir()):
+            if target.exists() and (not target.is_dir() or any(target.iterdir())):
                 marker = target / "SOURCE-NOTES.txt"
                 if not overwrite:
                     raise ValueError(f"Pack already exists on the SD card: {target}. Enable replacement to update it.")
@@ -423,30 +653,53 @@ def deploy_job(job_id: str, payload: dict) -> None:
                 ):
                     raise ValueError(f"Refusing to replace an unrecognized SD-card pack: {target}")
             files = [item for item in source.rglob("*") if item.is_file()]
-            copy_plan.append((category, source, target, files))
+            staged_target = staging_root / category / source.name
+            copy_plan.append((category, source, target, staged_target, files))
 
-        total = sum(len(files) for _, _, _, files in copy_plan)
+        total = sum(len(files) for _, _, _, _, files in copy_plan)
         update_job(job_id, state="running", total=total, completed=0,
-                   card_root=card["path"], sources=[str(source) for _, source, _, _ in copy_plan])
+                   card_root=card["path"], sources=[str(source) for _, source, _, _, _ in copy_plan])
+        if ledger_path:
+            append_ledger(ledger_path, job_id, "deployment-start", card=card["path"])
         completed = 0
-        for category, source, target, files in copy_plan:
-            if target.exists() and any(target.iterdir()) and overwrite:
-                shutil.rmtree(target)
-            target.mkdir(parents=True, exist_ok=True)
+        for category, source, target, staged_target, files in copy_plan:
+            staged_target.mkdir(parents=True, exist_ok=True)
             log_job(job_id, f"Copying {category}/{source.name} to mounted SD card")
             for source_file in files:
                 if JOBS[job_id]["cancel"].is_set():
                     raise RuntimeError("Copy cancelled.")
-                destination = target / source_file.relative_to(source)
+                destination = staged_target / source_file.relative_to(source)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source_file, destination)
+                if ledger_path:
+                    append_ledger(ledger_path, job_id, "copy-file", category=category,
+                                  source=source_file, destination=destination, bytes=destination.stat().st_size,
+                                  sha256=image_hash(destination))
                 completed += 1
                 update_job(job_id, completed=completed)
+        for category, _, _, staged_target, _ in copy_plan:
+            validate_pack(staged_target, category)
+        commit_directories(
+            staging_root,
+            [(category, staged_target, target) for category, _, target, staged_target, _ in copy_plan],
+        )
+        shutil.rmtree(staging_root, ignore_errors=True)
+        if ledger_path:
+            append_ledger(ledger_path, job_id, "deployment-complete", card=card["path"], files=completed)
         log_job(job_id, f"Finished: copied {completed} files to {card['path']}")
-        update_job(job_id, state="complete", completed=total)
+        update_job(job_id, state="complete", completed=total,
+                   integrity={"state": "passed", "files": completed})
     except Exception as exc:
+        if ledger_path:
+            try:
+                append_ledger(ledger_path, job_id, "deployment-fail", error=str(exc), card=payload.get("card_root", ""))
+            except OSError:
+                pass
+        if staging_root:
+            shutil.rmtree(staging_root, ignore_errors=True)
         log_job(job_id, str(exc))
-        update_job(job_id, state="cancelled" if "cancelled" in str(exc).lower() else "error", error=str(exc))
+        update_job(job_id, state="cancelled" if "cancelled" in str(exc).lower() else "error", error=str(exc),
+                   integrity={"state": "failed", "message": str(exc)})
 
 
 def open_output_folder(job_id: str) -> str:
@@ -494,6 +747,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/api/config":
                 json_response(self, public_config())
+                return
+            if parsed.path == "/api/current-job":
+                with JOBS_LOCK:
+                    current = current_job_locked()
+                json_response(self, {"job": current})
                 return
             if parsed.path == "/api/dependencies":
                 json_response(self, dependencies())
@@ -550,7 +808,7 @@ class Handler(BaseHTTPRequestHandler):
                     job = JOBS.get(job_id)
                     if not job:
                         raise ValueError("Unknown job.")
-                    response = {key: value for key, value in job.items() if key not in {"cancel", "process"}}
+                    response = public_job(job)
                 json_response(self, response)
                 return
             self.serve_static(parsed.path)
@@ -568,9 +826,13 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("The converter server is shutting down.")
                 job_id = uuid.uuid4().hex[:12]
                 with JOBS_LOCK:
+                    conflict = active_job_error()
+                    if conflict:
+                        raise ValueError(conflict)
                     JOBS[job_id] = {
                         "id": job_id, "state": "queued", "completed": 0, "total": 0,
                         "log": [], "cancel": threading.Event(), "process": None,
+                        "kind": "convert",
                     }
                 threading.Thread(target=convert_job, args=(job_id, payload), daemon=True).start()
                 json_response(self, {"job_id": job_id})
@@ -580,6 +842,9 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("The converter server is shutting down.")
                 source_job_id = payload.get("job_id")
                 with JOBS_LOCK:
+                    conflict = active_job_error()
+                    if conflict:
+                        raise ValueError(conflict)
                     source_job = JOBS.get(source_job_id)
                     if not source_job or source_job.get("state") != "complete":
                         raise ValueError("Complete a conversion before copying packs to the SD card.")
@@ -589,6 +854,7 @@ class Handler(BaseHTTPRequestHandler):
                     "card_root": payload.get("card_root"),
                     "sources": sources,
                     "overwrite": bool(payload.get("overwrite")),
+                    "ledger_path": str(Path(source_job["output_root"]) / "log.txt"),
                 }
                 with JOBS_LOCK:
                     JOBS[job_id] = {

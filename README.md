@@ -40,6 +40,12 @@ The converter also has an upper-left Stop server control. It requires an
 explicit Yes confirmation and gracefully cancels active conversion or card-copy
 work before exiting; Ctrl+C remains supported.
 
+The Install step is gated by an integrity check. Generated packs contain
+`MANIFEST.sha256`, and the converter keeps an `output/log.txt` ledger with file
+sizes and SHA-256 hashes. Card deployment validates the source and the staged
+card copy before committing it, so a failed check leaves the existing pack
+untouched.
+
 ### Using the converter on another computer
 
 Download the repository from GitHub and extract it. The converter requires
