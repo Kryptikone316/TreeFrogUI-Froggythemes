@@ -33,6 +33,10 @@ python3 converter/server.py
 py converter/server.py
 ```
 
+When already inside the `converter/` directory, use either `python3
+server.py` or `./server.py` on Linux/macOS. The included `server.py` has
+executable permissions and uses its own shebang.
+
 5. Open `http://127.0.0.1:8765` in a browser. Stop the server with `Ctrl+C`.
 
 Choose the already-extracted source directory, scan it, and select the main
