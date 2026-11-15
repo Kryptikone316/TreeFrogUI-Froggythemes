@@ -27,6 +27,11 @@ history are verified.
 
 ### Bring-your-own-theme candidates
 
+The release boundary is intentionally narrow: only PrettyTreeFrog is included
+in the downloadable pack assets. The other source records are links and review
+notes for users who obtain those projects independently. See
+[`BYO_THEMES.md`](BYO_THEMES.md) for the source links and conversion procedure.
+
 `EmuELEC_Roleta` may be considered a bring-your-own-theme candidate for users
 who obtain it independently. It is not distributed, packaged, or included in
 our presets because its README identifies a HyperMameinaBox ancestor and
