@@ -54,34 +54,22 @@ struct preset {
     const char *icon_pack;
 };
 
-static const struct preset g_presets[] = {
+#define BASE_PRESET_COUNT 3
+#define MAX_PRESETS (BASE_PRESET_COUNT + MAX_PACKS)
+#define PRESET_SECTION_HEIGHT 24
+
+static const struct preset g_base_presets[BASE_PRESET_COUNT] = {
     { "Base Vertical", "Catppuccin Mocha", "", "vertical", "Pixel_by_Jeltron" },
     { "Base Horizontal", "Catppuccin Mocha", "", "horizontal", "Pixel_by_Jeltron" },
     { "Base System View", "Catppuccin Mocha", "", "system", "Pixel_by_Jeltron" },
-    { "PrettyTreeFrog", "", "PrettyTreeFrog", "system", "PrettyTreeFrog" },
-    { "Alekfull ARTFLIX", "", "EmuELEC_Alekfull_ARTFLIX", "system", "EmuELEC_Alekfull_ARTFLIX" },
-    { "Alekfull NX", "", "EmuELEC_Alekfull_NX", "system", "EmuELEC_Alekfull_NX" },
-    { "Alekfull SOLO", "", "EmuELEC_Alekfull_SOLO", "system", "EmuELEC_Alekfull_SOLO" },
-    { "Carbon", "", "EmuELEC_Carbon", "system", "EmuELEC_Carbon" },
-    { "Clean Style", "", "EmuELEC_Clean_Style", "system", "EmuELEC_Clean_Style" },
-    { "Comic Book", "", "EmuELEC_Comic_Book", "system", "EmuELEC_Comic_Book" },
-    { "Crystal Blue", "", "EmuELEC_Crystal_Blue", "system", "EmuELEC_Crystal_Blue" },
-    { "Fundamental", "", "EmuELEC_Fundamental", "system", "EmuELEC_Fundamental" },
-    { "Locomotion", "", "EmuELEC_Locomotion", "system", "EmuELEC_Locomotion" },
-    { "NES Box", "", "EmuELEC_NES_Box", "system", "EmuELEC_NES_Box" },
-    { "NES Mini", "", "EmuELEC_NES_Mini", "system", "EmuELEC_NES_Mini" },
-    { "Neon Overdrive", "", "EmuELEC_Neon_Overdrive", "system", "EmuELEC_Neon_Overdrive" },
-    { "Neon Pink Blue", "", "EmuELEC_Neon_Pink_Blue", "system", "EmuELEC_Neon_Pink_Blue" },
-    { "Pixel", "", "EmuELEC_Pixel", "system", "EmuELEC_Pixel" },
-    { "Roleta", "", "EmuELEC_Roleta", "system", "EmuELEC_Roleta" },
-    { "Space Oddity", "", "EmuELEC_Space_Oddity", "system", "EmuELEC_Space_Oddity" },
-    { "Spin Master", "", "EmuELEC_Spin_Master", "system", "EmuELEC_Spin_Master" },
-    { "Super Sweet", "", "EmuELEC_Super_Sweet", "system", "EmuELEC_Super_Sweet" }
 };
 
-#define PRESET_COUNT ((int)(sizeof(g_presets) / sizeof(g_presets[0])))
-#define BASE_PRESET_COUNT 3
-#define PRESET_SECTION_HEIGHT 24
+static struct preset g_presets[MAX_PRESETS];
+static char g_preset_names[MAX_PACKS][MAX_NAME];
+static char g_preset_theme_packs[MAX_PACKS][MAX_NAME];
+static char g_preset_icon_packs[MAX_PACKS][MAX_NAME];
+static int g_preset_count;
+#define PRESET_COUNT (g_preset_count)
 
 static int g_w = 854;
 static int g_h = 480;
@@ -837,6 +825,34 @@ static int pack_name_exists(char names[MAX_PACKS][MAX_NAME], int count, const ch
     return 0;
 }
 
+static void build_presets(void)
+{
+    int i, pack_slot = 0;
+
+    g_preset_count = 0;
+    for (i = 0; i < BASE_PRESET_COUNT; i++)
+        g_presets[g_preset_count++] = g_base_presets[i];
+
+    /* A pack preset is registered only when the exact same folder name is
+     * present in both catalogs.  One-sided packs remain independently
+     * selectable under Themes or Icons. */
+    for (i = 0; i < g_pack_count && g_preset_count < MAX_PRESETS; i++) {
+        if (pack_name_exists(g_icon_packs, g_icon_count, g_packs[i]) == 0)
+            continue;
+        if (pack_slot >= MAX_PACKS) break;
+        format_pack_name(g_packs[i], g_preset_names[pack_slot], MAX_NAME);
+        snprintf(g_preset_theme_packs[pack_slot], MAX_NAME, "%s", g_packs[i]);
+        snprintf(g_preset_icon_packs[pack_slot], MAX_NAME, "%s", g_packs[i]);
+        g_presets[g_preset_count].name = g_preset_names[pack_slot];
+        g_presets[g_preset_count].theme = "";
+        g_presets[g_preset_count].theme_pack = g_preset_theme_packs[pack_slot];
+        g_presets[g_preset_count].style = "system";
+        g_presets[g_preset_count].icon_pack = g_preset_icon_packs[pack_slot];
+        g_preset_count++;
+        pack_slot++;
+    }
+}
+
 static int scan_pack_dir(const char *root, char names[MAX_PACKS][MAX_NAME])
 {
     DIR *dir = opendir(root);
@@ -866,6 +882,7 @@ static void scan_packs(void)
         qsort(g_icon_packs, (size_t)g_icon_count,
               sizeof(g_icon_packs[0]), pack_compare);
     }
+    build_presets();
 }
 
 static int load_font(void)

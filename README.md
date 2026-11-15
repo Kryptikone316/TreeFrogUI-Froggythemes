@@ -30,6 +30,12 @@ native-size background JPEGs for the selected device family and optimized
 system-icon PNGs while showing scan and conversion progress. See
 [`converter/README.md`](converter/README.md).
 
+After conversion, users may explicitly copy the generated packs to a mounted
+SD card or open the output folder for manual copying. The card must be mounted
+and selected through the explorer; FroggyThemes does not use USB/MTP or mount
+devices automatically. TreeFrogUI paths and device definitions are maintained
+in [`converter/config.json`](converter/config.json).
+
 ### Using the converter on another computer
 
 Download the repository from GitHub and extract it. The converter requires
@@ -65,6 +71,10 @@ The launcher expects `/mnt/sdcard/frogui/theme-packs/` and
 `/mnt/sdcard/frogui/icon-packs/`. The pack files are copied into those
 locations by the TreeFrogUI release process or by the accompanying SD-card
 deployment workflow.
+
+At startup, FroggyThemes registers a Pack preset only when an identical folder
+name exists in both directories. A background-only pack appears under Themes;
+an icon-only pack appears under Icons.
 
 ## Controls
 

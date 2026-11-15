@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "treefrogui": {
+    "frogui_directory": "frogui",
+    "settings_file": "frogui/settings.txt",
+    "theme_packs_directory": "frogui/theme-packs",
+    "icon_packs_directory": "frogui/icon-packs"
+  },
+  "staging": {
+    "theme_packs": "theme-packs",
+    "icon_packs": "icon-packs"
+  },
+  "source_maps": {
+    "backgrounds": "system_background_map.txt",
+    "icons": "system_icon_aliases.txt"
+  },
+  "output": {
+    "background_quality": 78,
+    "background_min_quality": 60,
+    "background_max_quality": 95,
+    "icon_max_width": 160,
+    "icon_max_height": 130,
+    "png_compression_level": 9
+  },
+  "default_device": "SF3500",
+  "devices": [
+    { "id": "R36SX", "label": "R36SX", "width": 640, "height": 480 },
+    { "id": "R36HD", "label": "R36 HD", "width": 640, "height": 480 },
+    { "id": "GB350", "label": "GB350", "width": 640, "height": 480 },
+    { "id": "SF3000", "label": "SF3000", "width": 854, "height": 480 },
+    { "id": "SF3000HD", "label": "SF3000 HD", "width": 854, "height": 480 },
+    { "id": "SF3100", "label": "SF3100", "width": 854, "height": 480 },
+    { "id": "SF3500", "label": "SF3500", "width": 854, "height": 480 }
+  ]
+}

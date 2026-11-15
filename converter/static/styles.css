@@ -40,8 +40,11 @@ h2 { margin-bottom: 0; font-size: 22px; letter-spacing: -.02em; }
 .badge.warning { color: var(--gold); border-color: rgba(240, 200, 120, .4); }
 .notice { padding: 13px 16px; border: 1px solid rgba(141, 230, 182, .2); border-radius: 11px; color: #c8d9d1; background: rgba(19, 46, 39, .6); }
 .notice strong { color: var(--frog); }
+.notice a { color: var(--frog); }
+.notice.compact { margin-bottom: 18px; font-size: 13px; }
 .steps { display: flex; gap: 7px; margin: 26px 0 13px; border-bottom: 1px solid var(--line); }
 .step { padding: 11px 16px; border: 0; border-bottom: 2px solid transparent; color: var(--muted); background: transparent; }
+.step:disabled { cursor: not-allowed; opacity: .42; }
 .step span { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 7px; border: 1px solid currentColor; border-radius: 50%; font-size: 12px; }
 .step.active { border-color: var(--frog); color: var(--frog); }
 .panel { min-height: 410px; padding: 24px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: 0 24px 80px rgba(0,0,0,.16); }
@@ -85,6 +88,9 @@ code { color: #b9e8cf; font-family: ui-monospace, SFMono-Regular, Consolas, mono
 .check-row { display: flex; gap: 10px; align-items: flex-start; padding-top: 25px; }
 .check-row input { margin-top: 4px; accent-color: var(--frog-dark); }
 .check-row label span { display: block; color: var(--muted); font-size: 12px; }
+.install-actions { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin: 20px 0; }
+.install-actions .check-row { padding-top: 0; }
+.install-buttons { display: flex; gap: 9px; margin-left: auto; }
 .validation { min-height: 24px; margin-top: 22px; font-size: 13px; }
 .validation.good, .result.good { color: var(--frog); }
 .validation.bad, .result.bad { color: var(--danger); }
@@ -104,6 +110,8 @@ footer a { color: var(--frog); }
   .panel-heading { align-items: flex-start; flex-direction: column; }
   .source-grid, .settings-grid { grid-template-columns: 1fr; }
   .source-grid > div:first-child { grid-column: auto; }
+  .install-actions { align-items: stretch; flex-direction: column; }
+  .install-buttons { margin-left: 0; }
   .preview-frame { width: 145px; height: 75px; }
   footer { flex-direction: column; }
 }

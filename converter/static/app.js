@@ -1,5 +1,12 @@
 const $ = (id) => document.getElementById(id);
-const state = { browsePath: null, browseParent: null, jobId: null, inspection: null };
+const state = {
+  browsers: { source: { path: null, parent: null }, card: { path: null, parent: null } },
+  jobId: null,
+  deployJobId: null,
+  inspection: null,
+  cardValid: false,
+  config: null,
+};
 
 function showStep(name) {
   document.querySelectorAll('.step').forEach((button) => button.classList.toggle('active', button.dataset.step === name));
@@ -50,21 +57,23 @@ function preview(path) {
   $('previewCard').classList.remove('hidden');
 }
 
-async function openBrowser(path) {
+async function openBrowser(path, target = 'source') {
   try {
     const data = await getJson(`/api/browse?path=${encodeURIComponent(path)}`);
-    state.browsePath = data.path;
-    state.browseParent = data.parent;
-    $('browsePath').textContent = data.path;
-    $('browserEntries').innerHTML = '';
+    state.browsers[target] = { path: data.path, parent: data.parent };
+    const browser = $(target === 'card' ? 'cardBrowser' : 'browser');
+    const browsePath = $(target === 'card' ? 'cardBrowsePath' : 'browsePath');
+    const browserEntries = $(target === 'card' ? 'cardBrowserEntries' : 'browserEntries');
+    browsePath.textContent = data.path;
+    browserEntries.innerHTML = '';
     data.entries.forEach((entry) => {
       const row = document.createElement('div');
       row.className = 'browser-entry';
       const open = document.createElement('button');
       open.className = entry.directory ? 'entry-name directory' : 'entry-name';
       open.textContent = `${entry.directory ? '▸ ' : entry.image ? '▧ ' : '· '}${entry.name}`;
-      if (entry.directory) open.onclick = () => openBrowser(entry.path);
-      else if (entry.image) open.onclick = () => {
+      if (entry.directory) open.onclick = () => openBrowser(entry.path, target);
+      else if (entry.image && target === 'source') open.onclick = () => {
         $('backgroundSource').value = entry.path;
         preview(entry.path);
       };
@@ -74,15 +83,21 @@ async function openBrowser(path) {
         use.className = 'button tiny';
         use.textContent = 'Use folder';
         use.onclick = () => {
-          $('sourceRoot').value = entry.path;
-          $('browser').classList.add('hidden');
-          inspectSource();
+          if (target === 'card') {
+            $('cardRoot').value = entry.path;
+            $('cardBrowser').classList.add('hidden');
+            checkCard();
+          } else {
+            $('sourceRoot').value = entry.path;
+            $('browser').classList.add('hidden');
+            inspectSource();
+          }
         };
         row.appendChild(use);
       }
-      $('browserEntries').appendChild(row);
+      browserEntries.appendChild(row);
     });
-    $('browser').classList.remove('hidden');
+    browser.classList.remove('hidden');
   } catch (error) {
     showMessage(error.message);
   }
@@ -122,8 +137,12 @@ function validate() {
 }
 
 function updateOutputSpec() {
-  const small = ['R36SX', 'R36HD', 'GB350'].includes($('device').value);
-  $('outputSpec').textContent = `Target output: ${small ? '640×480' : '854×480'} RGB backgrounds · ≤160×130 optimized icons`;
+  const configured = state.config && state.config.devices.find((entry) => entry.id === $('device').value);
+  const width = configured ? configured.width : (['R36SX', 'R36HD', 'GB350'].includes($('device').value) ? 640 : 854);
+  const height = configured ? configured.height : 480;
+  const iconWidth = state.config ? state.config.output.icon_max_width : 160;
+  const iconHeight = state.config ? state.config.output.icon_max_height : 130;
+  $('outputSpec').textContent = `Target output: ${width}×${height} RGB backgrounds · ≤${iconWidth}×${iconHeight} optimized icons`;
 }
 
 async function startConversion() {
@@ -180,6 +199,10 @@ async function pollJob() {
       $('cancelButton').classList.add('hidden');
       $('result').textContent = `Packs staged under “${$('outputRoot').value}”. Review SOURCE-NOTES.txt before redistribution.`;
       $('result').className = 'result good';
+      $('installStep').disabled = false;
+      $('openOutputButton').classList.remove('hidden');
+      $('deployLog').textContent = 'Choose a mounted SD card root to continue.';
+      showStep('install');
       return;
     }
     if (job.state === 'error' || job.state === 'cancelled') {
@@ -192,6 +215,87 @@ async function pollJob() {
     setTimeout(pollJob, 250);
   } catch (error) {
     $('log').textContent += `\n${error.message}`;
+  }
+}
+
+async function checkCard() {
+  try {
+    const path = $('cardRoot').value.trim();
+    if (!path) throw new Error('Choose the mounted SD card root first.');
+    const data = await getJson(`/api/card-check?path=${encodeURIComponent(path)}`);
+    state.cardValid = data.valid;
+    $('deployButton').disabled = !data.valid;
+    $('cardHint').textContent = data.valid
+      ? `Mounted TreeFrogUI card found. Packs will copy to ${data.theme_target} and ${data.icon_target}.`
+      : 'This folder does not contain the configured TreeFrogUI directory. Select the mounted card root, not its frogui folder.';
+    $('cardHint').className = `hint ${data.valid ? 'good' : 'bad'}`;
+  } catch (error) {
+    state.cardValid = false;
+    $('deployButton').disabled = true;
+    $('cardHint').textContent = error.message;
+    $('cardHint').className = 'hint bad';
+  }
+}
+
+async function startDeploy() {
+  if (!state.jobId || !state.cardValid) return;
+  try {
+    const result = await postJson('/api/deploy', {
+      job_id: state.jobId,
+      card_root: $('cardRoot').value.trim(),
+      overwrite: $('deployOverwrite').checked,
+    });
+    state.deployJobId = result.job_id;
+    $('deployButton').disabled = true;
+    $('deployProgressBar').style.width = '0%';
+    $('deployProgressCount').textContent = '0 / 0';
+    $('deployProgressPercent').textContent = '0%';
+    $('deployLog').textContent = 'Starting SD-card copy…';
+    $('deployResult').classList.add('hidden');
+    pollDeploy();
+  } catch (error) {
+    $('deployResult').textContent = error.message;
+    $('deployResult').className = 'result bad';
+  }
+}
+
+async function openOutputFolder() {
+  if (!state.jobId) return;
+  try {
+    const result = await postJson('/api/open-output', { job_id: state.jobId });
+    $('deployResult').textContent = `Opened ${result.path} in the operating system's file explorer.`;
+    $('deployResult').className = 'result good';
+  } catch (error) {
+    $('deployResult').textContent = error.message;
+    $('deployResult').className = 'result bad';
+  }
+}
+
+async function pollDeploy() {
+  if (!state.deployJobId) return;
+  try {
+    const job = await getJson(`/api/jobs/${state.deployJobId}`);
+    const total = job.total || 0;
+    const percent = total ? Math.min(100, Math.round((job.completed / total) * 100)) : 0;
+    $('deployProgressBar').style.width = `${percent}%`;
+    $('deployProgressCount').textContent = `${job.completed} / ${total}`;
+    $('deployProgressPercent').textContent = `${percent}%`;
+    $('deployLog').textContent = (job.log || []).join('\n') || 'Preparing SD-card copy…';
+    if (job.state === 'complete') {
+      $('deployResult').textContent = `Copied the generated pack files to ${job.card_root}. The SD card can now be safely unmounted and returned to the device.`;
+      $('deployResult').className = 'result good';
+      $('deployButton').disabled = false;
+      return;
+    }
+    if (job.state === 'error' || job.state === 'cancelled') {
+      $('deployResult').textContent = job.error || 'The SD-card copy did not complete.';
+      $('deployResult').className = 'result bad';
+      $('deployButton').disabled = false;
+      return;
+    }
+    setTimeout(pollDeploy, 250);
+  } catch (error) {
+    $('deployLog').textContent += `\n${error.message}`;
   }
 }
 
@@ -211,13 +315,39 @@ async function checkDependencies() {
   }
 }
 
+async function loadConfig() {
+  try {
+    const config = await getJson('/api/config');
+    state.config = config;
+    const device = $('device');
+    device.innerHTML = '';
+    config.devices.forEach((entry) => {
+      const option = document.createElement('option');
+      option.value = entry.id;
+      option.textContent = `${entry.label} — ${entry.width}×${entry.height}`;
+      if (entry.id === config.default_device) option.selected = true;
+      device.appendChild(option);
+    });
+    const frogui = config.treefrogui.frogui_directory;
+    $('cardHint').innerHTML = `Choose the mount root containing <code>${frogui}</code>, not the <code>${frogui}</code> folder itself.`;
+    updateOutputSpec();
+  } catch (error) {
+    // The HTML device list remains usable if the optional config request fails.
+  }
+}
+
 document.querySelectorAll('.step').forEach((button) => button.addEventListener('click', () => showStep(button.dataset.step)));
-$('browseButton').addEventListener('click', () => openBrowser($('sourceRoot').value.trim() || '/'));
-$('parentButton').addEventListener('click', () => state.browseParent && openBrowser(state.browseParent));
+$('browseButton').addEventListener('click', () => openBrowser($('sourceRoot').value.trim() || '/', 'source'));
+$('parentButton').addEventListener('click', () => state.browsers.source.parent && openBrowser(state.browsers.source.parent, 'source'));
+$('cardBrowseButton').addEventListener('click', () => openBrowser($('cardRoot').value.trim() || '/', 'card'));
+$('cardParentButton').addEventListener('click', () => state.browsers.card.parent && openBrowser(state.browsers.card.parent, 'card'));
 $('inspectButton').addEventListener('click', inspectSource);
 $('backgroundSource').addEventListener('change', (event) => preview(event.target.value));
 $('convertButton').addEventListener('click', startConversion);
 $('cancelButton').addEventListener('click', cancelJob);
+$('checkCardButton').addEventListener('click', checkCard);
+$('deployButton').addEventListener('click', startDeploy);
+$('openOutputButton').addEventListener('click', openOutputFolder);
 $('dim').addEventListener('input', (event) => $('dimValue').textContent = `${event.target.value}%`);
 $('quality').addEventListener('input', (event) => $('qualityValue').textContent = event.target.value);
 $('device').addEventListener('change', updateOutputSpec);
@@ -227,4 +357,5 @@ $('mode').addEventListener('change', () => {
   $('iconRoot').disabled = mode === 'backgrounds';
 });
 checkDependencies();
+loadConfig();
 updateOutputSpec();

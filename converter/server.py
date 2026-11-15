@@ -8,6 +8,7 @@ import mimetypes
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -20,17 +21,29 @@ from urllib.parse import parse_qs, unquote, urlparse
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif"}
-MAP_FILE = ROOT / "system_background_map.txt"
-ALIASES_FILE = ROOT / "system_icon_aliases.txt"
+CONFIG_PATH = Path(os.environ.get("FROGGYTHEMES_CONFIG", ROOT / "config.json")).resolve()
+
+
+def load_config() -> dict:
+    with CONFIG_PATH.open("r", encoding="utf-8") as file:
+        config = json.load(file)
+    if not isinstance(config.get("devices"), list) or not config["devices"]:
+        raise ValueError("FroggyThemes config must define at least one device.")
+    for device in config["devices"]:
+        if not all(key in device for key in ("id", "label", "width", "height")):
+            raise ValueError("Each configured device needs id, label, width, and height.")
+    if config.get("default_device") not in {device["id"] for device in config["devices"]}:
+        raise ValueError("FroggyThemes config default_device must name a configured device.")
+    return config
+
+
+CONFIG = load_config()
 DEVICES = {
-    "R36SX": (640, 480),
-    "R36HD": (640, 480),
-    "GB350": (640, 480),
-    "SF3000": (854, 480),
-    "SF3000HD": (854, 480),
-    "SF3100": (854, 480),
-    "SF3500": (854, 480),
+    device["id"]: (int(device["width"]), int(device["height"]))
+    for device in CONFIG["devices"]
 }
+MAP_FILE = ROOT / CONFIG["source_maps"]["backgrounds"]
+ALIASES_FILE = ROOT / CONFIG["source_maps"]["icons"]
 JOBS: dict[str, dict] = {}
 JOBS_LOCK = threading.Lock()
 
@@ -122,6 +135,16 @@ def dependencies() -> dict:
     }
 
 
+def public_config() -> dict:
+    return {
+        "devices": CONFIG["devices"],
+        "default_device": CONFIG["default_device"],
+        "treefrogui": CONFIG["treefrogui"],
+        "staging": CONFIG["staging"],
+        "output": CONFIG["output"],
+    }
+
+
 def relative_to(path: Path, root: Path) -> str:
     try:
         return str(path.relative_to(root))
@@ -207,9 +230,11 @@ def background_command(
 
 
 def icon_command(tool: str, source: Path, destination: Path) -> list[str]:
+    output = CONFIG["output"]
     return [
         tool, str(source), "-background", "none", "-alpha", "set", "-trim", "+repage",
-        "-resize", "160x130>", "-strip", "-define", "png:compression-level=9",
+        "-resize", f"{output['icon_max_width']}x{output['icon_max_height']}>", "-strip",
+        "-define", f"png:compression-level={output['png_compression_level']}",
         str(destination),
     ]
 
@@ -248,8 +273,12 @@ def convert_job(job_id: str, payload: dict) -> None:
         output_root = path_from(payload.get("output_root"), must_exist=False)
         output_root.mkdir(parents=True, exist_ok=True)
         dim = max(0, min(90, int(payload.get("dim", 35))))
-        quality = max(60, min(95, int(payload.get("quality", 78))))
-        device = payload.get("device", "SF3500")
+        quality_limits = CONFIG["output"]
+        quality = max(
+            int(quality_limits["background_min_quality"]),
+            min(int(quality_limits["background_max_quality"]), int(payload.get("quality", quality_limits["background_quality"]))),
+        )
+        device = payload.get("device", CONFIG["default_device"])
         if device not in DEVICES:
             raise ValueError("Unknown target device.")
         width, height = DEVICES[device]
@@ -279,10 +308,10 @@ def convert_job(job_id: str, payload: dict) -> None:
 
         targets = []
         if mode in {"backgrounds", "both"}:
-            targets.append(output_root / "theme-packs" / pack_name)
+            targets.append(("theme", output_root / CONFIG["staging"]["theme_packs"] / pack_name))
         if mode in {"icons", "both"}:
-            targets.append(output_root / "icon-packs" / pack_name)
-        for target in targets:
+            targets.append(("icon", output_root / CONFIG["staging"]["icon_packs"] / pack_name))
+        for _, target in targets:
             target.mkdir(parents=True, exist_ok=True)
             marker = target / "SOURCE-NOTES.txt"
             if any(target.iterdir()) and not payload.get("overwrite") and not marker.exists():
@@ -300,7 +329,7 @@ def convert_job(job_id: str, payload: dict) -> None:
         completed = 0
         counts = {"backgrounds": 0, "icons": 0}
         if background_source:
-            destination = targets[0] / "main.jpg"
+            destination = targets[0][1] / "main.jpg"
             run_image(job_id, background_command(tool, background_source, destination, dim, quality, width, height), "main background")
             completed += 1
             counts["backgrounds"] += 1
@@ -308,13 +337,13 @@ def convert_job(job_id: str, payload: dict) -> None:
             for alias, source in bg_plan:
                 if not source:
                     continue
-                destination = targets[0] / f"{alias}.jpg"
+                destination = targets[0][1] / f"{alias}.jpg"
                 run_image(job_id, background_command(tool, source, destination, dim, quality, width, height), f"background {alias}")
                 completed += 1
                 counts["backgrounds"] += 1
                 update_job(job_id, completed=completed)
         if icon_root:
-            icon_target = targets[-1]
+            icon_target = targets[-1][1]
             for alias, source in icon_plan:
                 if not source:
                     continue
@@ -323,13 +352,103 @@ def convert_job(job_id: str, payload: dict) -> None:
                 completed += 1
                 counts["icons"] += 1
                 update_job(job_id, completed=completed)
-        for target in targets:
+        for _, target in targets:
             make_notes(target, payload, counts, width, height)
         log_job(job_id, f"Finished: {counts['backgrounds']} backgrounds, {counts['icons']} icons")
-        update_job(job_id, state="complete", completed=total)
+        update_job(job_id, state="complete", completed=total,
+                   outputs=[{"category": category, "path": str(target)} for category, target in targets],
+                   output_root=str(output_root), mode=mode)
     except Exception as exc:  # keep failures visible in the browser
         log_job(job_id, str(exc))
         update_job(job_id, state="cancelled" if "cancelled" in str(exc).lower() else "error", error=str(exc))
+
+
+def card_info(value: str) -> dict:
+    card_root = path_from(value)
+    if not card_root.is_dir():
+        raise ValueError("Mounted SD card path must be a directory.")
+    treefrogui = CONFIG["treefrogui"]
+    frogui = card_root / treefrogui["frogui_directory"]
+    return {
+        "path": str(card_root),
+        "frogui": str(frogui),
+        "valid": frogui.is_dir(),
+        "settings": (card_root / treefrogui["settings_file"]).is_file(),
+        "theme_target": str(card_root / treefrogui["theme_packs_directory"]),
+        "icon_target": str(card_root / treefrogui["icon_packs_directory"]),
+    }
+
+
+def deploy_job(job_id: str, payload: dict) -> None:
+    try:
+        card = card_info(payload.get("card_root", ""))
+        if not card["valid"]:
+            raise ValueError("Select the mounted SD card root containing a frogui directory.")
+        source_entries = payload.get("sources", [])
+        sources = [(entry["category"], path_from(entry["path"])) for entry in source_entries]
+        if not sources:
+            raise ValueError("There are no converted packs to copy.")
+        overwrite = bool(payload.get("overwrite"))
+        copy_plan = []
+        for category, source in sources:
+            if not source.is_dir() or category not in {"theme", "icon"}:
+                raise ValueError(f"Invalid converted pack path: {source}")
+            target_root = Path(card["theme_target"] if category == "theme" else card["icon_target"])
+            target = target_root / source.name
+            if target.exists() and any(target.iterdir()):
+                marker = target / "SOURCE-NOTES.txt"
+                if not overwrite:
+                    raise ValueError(f"Pack already exists on the SD card: {target}. Enable replacement to update it.")
+                if not marker.is_file() or not marker.read_text(encoding="utf-8", errors="replace").startswith(
+                    "Generated by FroggyThemes Converter"
+                ):
+                    raise ValueError(f"Refusing to replace an unrecognized SD-card pack: {target}")
+            files = [item for item in source.rglob("*") if item.is_file()]
+            copy_plan.append((category, source, target, files))
+
+        total = sum(len(files) for _, _, _, files in copy_plan)
+        update_job(job_id, state="running", total=total, completed=0,
+                   card_root=card["path"], sources=[str(source) for _, source, _, _ in copy_plan])
+        completed = 0
+        for category, source, target, files in copy_plan:
+            if target.exists() and any(target.iterdir()) and overwrite:
+                shutil.rmtree(target)
+            target.mkdir(parents=True, exist_ok=True)
+            log_job(job_id, f"Copying {category}/{source.name} to mounted SD card")
+            for source_file in files:
+                if JOBS[job_id]["cancel"].is_set():
+                    raise RuntimeError("Copy cancelled.")
+                destination = target / source_file.relative_to(source)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_file, destination)
+                completed += 1
+                update_job(job_id, completed=completed)
+        log_job(job_id, f"Finished: copied {completed} files to {card['path']}")
+        update_job(job_id, state="complete", completed=total)
+    except Exception as exc:
+        log_job(job_id, str(exc))
+        update_job(job_id, state="cancelled" if "cancelled" in str(exc).lower() else "error", error=str(exc))
+
+
+def open_output_folder(job_id: str) -> str:
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if not job or job.get("state") != "complete" or job.get("kind", "convert") == "deploy":
+            raise ValueError("Complete a conversion before opening its output folder.")
+        output_root = path_from(job.get("output_root", ""))
+    if not output_root.is_dir():
+        raise ValueError(f"Output folder no longer exists: {output_root}")
+    if os.name == "nt":
+        os.startfile(str(output_root))  # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(output_root)], start_new_session=True)
+    else:
+        opener = shutil.which("xdg-open")
+        if not opener:
+            raise ValueError("The OS file explorer command xdg-open was not found.")
+        subprocess.Popen([opener, str(output_root)], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return str(output_root)
 
 
 def browse(path: Path) -> dict:
@@ -354,6 +473,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         try:
+            if parsed.path == "/api/config":
+                json_response(self, public_config())
+                return
             if parsed.path == "/api/dependencies":
                 json_response(self, dependencies())
                 return
@@ -391,6 +513,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(data)
                 return
+            if parsed.path == "/api/card-check":
+                path = parse_qs(parsed.query).get("path", [""])[0]
+                json_response(self, card_info(path))
+                return
             if parsed.path == "/docs":
                 data = (ROOT / "README.md").read_bytes()
                 self.send_response(200)
@@ -426,6 +552,32 @@ class Handler(BaseHTTPRequestHandler):
                     }
                 threading.Thread(target=convert_job, args=(job_id, payload), daemon=True).start()
                 json_response(self, {"job_id": job_id})
+                return
+            if parsed.path == "/api/deploy":
+                source_job_id = payload.get("job_id")
+                with JOBS_LOCK:
+                    source_job = JOBS.get(source_job_id)
+                    if not source_job or source_job.get("state") != "complete":
+                        raise ValueError("Complete a conversion before copying packs to the SD card.")
+                    sources = list(source_job.get("outputs", []))
+                job_id = uuid.uuid4().hex[:12]
+                deploy_payload = {
+                    "card_root": payload.get("card_root"),
+                    "sources": sources,
+                    "overwrite": bool(payload.get("overwrite")),
+                }
+                with JOBS_LOCK:
+                    JOBS[job_id] = {
+                        "id": job_id, "state": "queued", "completed": 0, "total": 0,
+                        "log": [], "cancel": threading.Event(), "process": None,
+                        "kind": "deploy", "source_job_id": source_job_id,
+                    }
+                threading.Thread(target=deploy_job, args=(job_id, deploy_payload), daemon=True).start()
+                json_response(self, {"job_id": job_id})
+                return
+            if parsed.path == "/api/open-output":
+                path = open_output_folder(payload.get("job_id", ""))
+                json_response(self, {"ok": True, "path": path})
                 return
             if parsed.path.startswith("/api/jobs/") and parsed.path.endswith("/cancel"):
                 job_id = parsed.path.split("/")[-2]

@@ -27,6 +27,7 @@
       <button class="step active" data-step="source"><span>1</span> Source</button>
       <button class="step" data-step="settings"><span>2</span> Settings</button>
       <button class="step" data-step="progress"><span>3</span> Convert</button>
+      <button id="installStep" class="step" data-step="install" disabled><span>4</span> Install</button>
     </nav>
 
     <section id="source" class="panel active-panel">
@@ -163,6 +164,46 @@
       <div class="progress-meta"><span id="progressCount">0 / 0</span><span id="progressPercent">0%</span></div>
       <pre id="log" class="log">Conversion messages will appear here.</pre>
       <div id="result" class="result hidden"></div>
+    </section>
+
+    <section id="install" class="panel hidden">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">STEP FOUR</p>
+          <h2>Copy packs to the mounted SD card</h2>
+        </div>
+        <button id="checkCardButton" class="button secondary">Check card</button>
+      </div>
+      <div class="notice compact">
+        Mount the SD card before continuing. Select its mount root—the folder that contains <code>frogui/</code>. FroggyThemes does not use USB mode, MTP, or automatic device detection.
+      </div>
+      <label class="field-label" for="cardRoot">Mounted SD card root</label>
+      <div class="path-row">
+        <input id="cardRoot" type="text" placeholder="/media/your-name/SDCARD" autocomplete="off">
+        <button id="cardBrowseButton" class="button secondary">Browse</button>
+      </div>
+      <p id="cardHint" class="hint">Choose the mount root containing <code>frogui</code>, not the <code>frogui</code> folder itself.</p>
+      <div id="cardBrowser" class="browser hidden">
+        <div class="browser-toolbar">
+          <button id="cardParentButton" class="button tiny">↑ Parent</button>
+          <code id="cardBrowsePath">—</code>
+        </div>
+        <div id="cardBrowserEntries" class="browser-entries"></div>
+      </div>
+      <div class="install-actions">
+        <div class="check-row">
+          <input id="deployOverwrite" type="checkbox">
+          <label for="deployOverwrite"><strong>Replace existing generated pack(s)</strong><span>Only SD-card folders with FroggyThemes conversion notes can be replaced.</span></label>
+        </div>
+        <div class="install-buttons">
+          <button id="openOutputButton" class="button secondary hidden">Open output folder</button>
+          <button id="deployButton" class="button primary" disabled>Copy packs to SD card</button>
+        </div>
+      </div>
+      <div class="progress-track"><div id="deployProgressBar" class="progress-bar"></div></div>
+      <div class="progress-meta"><span id="deployProgressCount">0 / 0</span><span id="deployProgressPercent">0%</span></div>
+      <pre id="deployLog" class="log">The converted packs will be copied here after the card passes its check.</pre>
+      <div id="deployResult" class="result hidden"></div>
     </section>
 
     <footer>

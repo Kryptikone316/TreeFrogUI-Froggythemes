@@ -15,8 +15,10 @@ icon tab shows a six-icon contact sheet from the selected pack.
 Applying an icon pack also selects TreeFrogUI System View so the icons are
 visible when the frontend returns.
 The Presets tab restores the base Vertical, Horizontal, or System View layout,
-or applies a matching background + icon combination, including PrettyTreeFrog,
-where both packs exist.
+or applies a matching background + icon combination. Pack presets are
+registered automatically at startup when the exact same folder name exists in
+both frogui/theme-packs and frogui/icon-packs; one-sided packs remain in their
+individual Themes or Icons tab.
 Themes and icons can still be selected independently, and presets never delete
 installed packs.
 The illuminated frog before a pack name marks the item currently used by

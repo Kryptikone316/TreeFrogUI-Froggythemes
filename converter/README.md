@@ -55,3 +55,23 @@ redistribution. The converter does not grant a license to third-party art.
 
 The output path can be changed in the Settings step. Select “Replace a
 generated pack” only when re-running a pack that already has converter notes.
+
+## Optional SD-card installation
+
+After conversion, installation is user-triggered. Mount the SD card normally,
+choose its mount root in the Install step, and confirm that the folder contains
+the configured `frogui/` directory. **Copy packs to SD card** places generated
+backgrounds in `frogui/theme-packs/` and icons in `frogui/icon-packs/`. The
+tool does not mount cards or use USB/MTP. Existing generated packs require the
+replacement checkbox; unrecognized folders are never overwritten.
+
+If you prefer to copy files yourself, click **Open output folder** and use the
+operating system's file manager. The two staging folders mirror the card
+destinations.
+
+## Configuration
+
+`config.json` is the maintenance point for TreeFrogUI paths, staging folder
+names, device panel sizes, source-map filenames, and image limits. If a future
+TreeFrogUI release moves its pack directories, update this file before using
+the converter. Restart the local server after changing it.

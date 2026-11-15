@@ -17,6 +17,16 @@ The device selector is explicit: R36SX/R36 HD/GB350 map to 640×480, while
 SF3000/SF3000 HD/SF3100/SF3500 map to 854×480. Only background output
 dimensions change; icon normalization remains capped at 160×130.
 
+`config.json` is the single maintenance point for those device definitions,
+TreeFrogUI card paths, staging paths, source maps, and image limits. The
+The browser loads its device list and default device from `/api/config`; restart
+the server after editing the file.
+
+The optional deployment step only copies after an explicit button click. It
+requires a selected mounted card root containing the configured TreeFrogUI
+directory. Manual copying remains available through the OS file-explorer
+button.
+
 ## Safety and licensing
 
 The app is local-only and does not accept file uploads. Paths are resolved on
