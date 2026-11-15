@@ -34,8 +34,10 @@ converter/output/theme-packs/<PackName>/
 converter/output/icon-packs/<PackName>/
 ```
 
-Backgrounds are written as stripped sRGB/RGB JPEGs at 854×480. Icons are
-trimmed transparent PNGs no larger than 160×130. `SOURCE-NOTES.txt` records
+Choose the target device before starting. Backgrounds use the native panel
+size: R36SX, R36 HD, and GB350 use 640×480; SF3000, SF3000 HD, SF3100, and
+SF3500 use 854×480. Icons remain trimmed transparent PNGs no larger than
+160×130. `SOURCE-NOTES.txt` records
 the source path and reminds the user to review the original license before
 redistribution. The converter does not grant a license to third-party art.
 

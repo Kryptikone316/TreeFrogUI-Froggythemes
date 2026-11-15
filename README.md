@@ -26,8 +26,9 @@ remain outside the distributable set until their upstream license and source
 history are verified.
 
 The standalone converter runs locally with Python and ImageMagick. It creates
-854×480 background JPEGs and optimized system-icon PNGs while showing scan and
-conversion progress. See [`converter/README.md`](converter/README.md).
+native-size background JPEGs for the selected device family and optimized
+system-icon PNGs while showing scan and conversion progress. See
+[`converter/README.md`](converter/README.md).
 
 ## Build
 

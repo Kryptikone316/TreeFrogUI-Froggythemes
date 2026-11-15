@@ -13,6 +13,10 @@ shared TreeFrogUI alias map to find per-system images by filename stem, then
 applies the same native output constraints used by the maintained shell
 porting scripts.
 
+The device selector is explicit: R36SX/R36 HD/GB350 map to 640×480, while
+SF3000/SF3000 HD/SF3100/SF3500 map to 854×480. Only background output
+dimensions change; icon normalization remains capped at 160×130.
+
 ## Safety and licensing
 
 The app is local-only and does not accept file uploads. Paths are resolved on

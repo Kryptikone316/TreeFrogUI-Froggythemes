@@ -121,6 +121,11 @@ function validate() {
   return '';
 }
 
+function updateOutputSpec() {
+  const small = ['R36SX', 'R36HD', 'GB350'].includes($('device').value);
+  $('outputSpec').textContent = `Target output: ${small ? '640×480' : '854×480'} RGB backgrounds · ≤160×130 optimized icons`;
+}
+
 async function startConversion() {
   const problem = validate();
   if (problem) {
@@ -134,6 +139,7 @@ async function startConversion() {
     system_root: $('artRoot').value,
     icon_root: $('iconRoot').value,
     pack_name: $('packName').value.trim(),
+    device: $('device').value,
     mode: $('mode').value,
     output_root: $('outputRoot').value.trim(),
     source_url: $('sourceUrl').value.trim(),
@@ -214,9 +220,11 @@ $('convertButton').addEventListener('click', startConversion);
 $('cancelButton').addEventListener('click', cancelJob);
 $('dim').addEventListener('input', (event) => $('dimValue').textContent = `${event.target.value}%`);
 $('quality').addEventListener('input', (event) => $('qualityValue').textContent = event.target.value);
+$('device').addEventListener('change', updateOutputSpec);
 $('mode').addEventListener('change', () => {
   const mode = $('mode').value;
   $('backgroundSource').disabled = mode === 'icons';
   $('iconRoot').disabled = mode === 'backgrounds';
 });
 checkDependencies();
+updateOutputSpec();
