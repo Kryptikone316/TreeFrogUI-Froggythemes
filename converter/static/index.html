@@ -9,6 +9,7 @@
 <body>
   <main class="shell">
     <header class="masthead">
+      <button id="stopButton" class="shutdown-button" type="button">Stop server</button>
       <div class="frog-mark" aria-hidden="true">🐸</div>
       <div>
         <p class="eyebrow">TREEFROGUI TOOLKIT</p>
@@ -211,6 +212,17 @@
       <a href="/docs" target="_blank" rel="noreferrer">Dependency notes</a>
     </footer>
   </main>
+  <div id="shutdownModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="shutdownTitle">
+    <div class="modal-card">
+      <p class="eyebrow">SERVER CONTROL</p>
+      <h2 id="shutdownTitle">Stop FroggyThemes Converter?</h2>
+      <p id="shutdownMessage">Any active conversion or SD-card copy will be cancelled before the local server exits. Choose <strong>Yes</strong> only if you want to stop it now.</p>
+      <div class="modal-actions">
+        <button id="shutdownNo" class="button secondary" type="button">No</button>
+        <button id="shutdownYes" class="button danger" type="button">Yes</button>
+      </div>
+    </div>
+  </div>
   <script src="/app.js"></script>
 </body>
 </html>

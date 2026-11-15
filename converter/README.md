@@ -39,6 +39,12 @@ executable permissions and uses its own shebang.
 
 5. Open `http://127.0.0.1:8765` in a browser. Stop the server with `Ctrl+C`.
 
+The upper-left **Stop server** button is an alternative to `Ctrl+C`. It
+requires choosing **Yes** in its confirmation dialog. If conversion or
+installation is active, the server cancels those jobs, stops their child
+processes, waits for them to settle, and then exits. Closing the browser tab
+alone does not stop the server.
+
 Choose the already-extracted source directory, scan it, and select the main
 image. Do not select the downloaded ZIP itself; archive extraction is not part
 of this application.

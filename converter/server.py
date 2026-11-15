@@ -46,6 +46,7 @@ MAP_FILE = ROOT / CONFIG["source_maps"]["backgrounds"]
 ALIASES_FILE = ROOT / CONFIG["source_maps"]["icons"]
 JOBS: dict[str, dict] = {}
 JOBS_LOCK = threading.Lock()
+SHUTDOWN_REQUESTED = False
 
 
 def json_response(handler: BaseHTTPRequestHandler, payload: dict, status: int = 200) -> None:
@@ -189,6 +190,24 @@ def update_job(job_id: str, **values) -> None:
 def log_job(job_id: str, message: str) -> None:
     with JOBS_LOCK:
         JOBS[job_id]["log"].append(message)
+
+
+def cancel_active_jobs() -> int:
+    with JOBS_LOCK:
+        active = [job for job in JOBS.values() if job.get("state") in {"queued", "running"}]
+        for job in active:
+            job["cancel"].set()
+        return len(active)
+
+
+def wait_for_jobs(timeout: float = 10.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with JOBS_LOCK:
+            active = any(job.get("state") in {"queued", "running"} for job in JOBS.values())
+        if not active:
+            return
+        time.sleep(0.05)
 
 
 def run_image(job_id: str, command: list[str], label: str) -> None:
@@ -539,11 +558,14 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, error(str(exc)), 400)
 
     def do_POST(self) -> None:
+        global SHUTDOWN_REQUESTED
         parsed = urlparse(self.path)
         try:
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length) or b"{}")
             if parsed.path == "/api/convert":
+                if SHUTDOWN_REQUESTED:
+                    raise ValueError("The converter server is shutting down.")
                 job_id = uuid.uuid4().hex[:12]
                 with JOBS_LOCK:
                     JOBS[job_id] = {
@@ -554,6 +576,8 @@ class Handler(BaseHTTPRequestHandler):
                 json_response(self, {"job_id": job_id})
                 return
             if parsed.path == "/api/deploy":
+                if SHUTDOWN_REQUESTED:
+                    raise ValueError("The converter server is shutting down.")
                 source_job_id = payload.get("job_id")
                 with JOBS_LOCK:
                     source_job = JOBS.get(source_job_id)
@@ -575,6 +599,16 @@ class Handler(BaseHTTPRequestHandler):
                 threading.Thread(target=deploy_job, args=(job_id, deploy_payload), daemon=True).start()
                 json_response(self, {"job_id": job_id})
                 return
+            if parsed.path == "/api/shutdown":
+                if payload.get("confirmation") != "Yes":
+                    raise ValueError("Shutdown requires the exact confirmation: Yes")
+                SHUTDOWN_REQUESTED = True
+                active_jobs = cancel_active_jobs()
+                threading.Thread(
+                    target=self.server_shutdown, args=(self.server,), daemon=True
+                ).start()
+                json_response(self, {"ok": True, "active_jobs": active_jobs})
+                return
             if parsed.path == "/api/open-output":
                 path = open_output_folder(payload.get("job_id", ""))
                 json_response(self, {"ok": True, "path": path})
@@ -591,6 +625,11 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("Unknown API endpoint.")
         except Exception as exc:
             json_response(self, error(str(exc)), 400)
+
+    @staticmethod
+    def server_shutdown(server: ThreadingHTTPServer) -> None:
+        wait_for_jobs()
+        server.shutdown()
 
     def serve_static(self, requested: str) -> None:
         relative = unquote(requested.lstrip("/")) or "index.html"
@@ -621,7 +660,8 @@ def main() -> None:
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        pass
+        cancel_active_jobs()
+        wait_for_jobs()
     finally:
         server.server_close()
 

@@ -36,6 +36,10 @@ and selected through the explorer; FroggyThemes does not use USB/MTP or mount
 devices automatically. TreeFrogUI paths and device definitions are maintained
 in [`converter/config.json`](converter/config.json).
 
+The converter also has an upper-left Stop server control. It requires an
+explicit Yes confirmation and gracefully cancels active conversion or card-copy
+work before exiting; Ctrl+C remains supported.
+
 ### Using the converter on another computer
 
 Download the repository from GitHub and extract it. The converter requires

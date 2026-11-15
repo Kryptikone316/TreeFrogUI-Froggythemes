@@ -23,6 +23,9 @@ button, input, select { font: inherit; }
 button { cursor: pointer; }
 .shell { max-width: 1120px; margin: 0 auto; padding: 38px 24px 28px; }
 .masthead { display: flex; align-items: center; gap: 18px; margin-bottom: 22px; }
+.shutdown-button { align-self: flex-start; padding: 8px 10px; border: 1px solid rgba(238, 141, 141, .35); border-radius: 8px; color: #ffd4d4; background: rgba(110, 35, 43, .25); font-size: 12px; font-weight: 750; white-space: nowrap; }
+.shutdown-button:hover { border-color: var(--danger); background: rgba(110, 35, 43, .45); }
+.shutdown-button:disabled { cursor: default; opacity: .7; }
 .frog-mark {
   display: grid; place-items: center; width: 62px; height: 62px; flex: 0 0 62px;
   border: 1px solid rgba(141, 230, 182, .45); border-radius: 20px;
@@ -99,6 +102,11 @@ code { color: #b9e8cf; font-family: ui-monospace, SFMono-Regular, Consolas, mono
 .progress-meta { display: flex; justify-content: space-between; margin: 7px 0 15px; color: var(--muted); font-size: 12px; }
 .log { min-height: 235px; max-height: 300px; overflow: auto; margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 8px; color: #b9d6c7; background: #07110f; font: 12px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; }
 .result { margin-top: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.modal { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px; background: rgba(0, 9, 7, .78); }
+.modal-card { width: min(460px, 100%); padding: 24px; border: 1px solid rgba(141, 230, 182, .35); border-radius: 14px; background: #102522; box-shadow: 0 25px 90px rgba(0,0,0,.45); }
+.modal-card h2 { margin-bottom: 12px; }
+.modal-card p:not(.eyebrow) { color: #c8d9d1; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
 footer { display: flex; justify-content: space-between; gap: 14px; padding: 15px 2px 0; color: var(--muted); font-size: 12px; }
 footer a { color: var(--frog); }
 .hidden { display: none !important; }

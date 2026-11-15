@@ -27,6 +27,11 @@ requires a selected mounted card root containing the configured TreeFrogUI
 directory. Manual copying remains available through the OS file-explorer
 button.
 
+Shutdown is also explicit. `/api/shutdown` accepts only the exact confirmation
+string `Yes`; it marks the server as closing, cancels queued/running jobs,
+waits up to ten seconds for ImageMagick or copy work to settle, and then calls
+the HTTP server shutdown. `Ctrl+C` uses the same cancellation and wait path.
+
 ## Safety and licensing
 
 The app is local-only and does not accept file uploads. Paths are resolved on

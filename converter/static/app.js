@@ -303,6 +303,35 @@ async function cancelJob() {
   if (state.jobId) await postJson(`/api/jobs/${state.jobId}/cancel`, {});
 }
 
+function openShutdownModal() {
+  $('shutdownMessage').textContent = 'Any active conversion or SD-card copy will be cancelled before the local server exits. Choose Yes only if you want to stop it now.';
+  $('shutdownYes').disabled = false;
+  $('shutdownNo').disabled = false;
+  $('shutdownModal').classList.remove('hidden');
+}
+
+function closeShutdownModal() {
+  $('shutdownModal').classList.add('hidden');
+}
+
+async function shutdownServer() {
+  $('shutdownYes').disabled = true;
+  $('shutdownNo').disabled = true;
+  $('shutdownMessage').textContent = 'Stopping active work and shutting down the local server…';
+  try {
+    const result = await postJson('/api/shutdown', { confirmation: 'Yes' });
+    $('shutdownMessage').textContent = result.active_jobs
+      ? `Cancelled ${result.active_jobs} active job${result.active_jobs === 1 ? '' : 's'}. The server has stopped; you can close this tab.`
+      : 'The server has stopped. You can close this tab.';
+    $('stopButton').textContent = 'Server stopped';
+    $('stopButton').disabled = true;
+  } catch (error) {
+    $('shutdownMessage').textContent = error.message;
+    $('shutdownYes').disabled = false;
+    $('shutdownNo').disabled = false;
+  }
+}
+
 async function checkDependencies() {
   try {
     const data = await getJson('/api/dependencies');
@@ -348,6 +377,9 @@ $('cancelButton').addEventListener('click', cancelJob);
 $('checkCardButton').addEventListener('click', checkCard);
 $('deployButton').addEventListener('click', startDeploy);
 $('openOutputButton').addEventListener('click', openOutputFolder);
+$('stopButton').addEventListener('click', openShutdownModal);
+$('shutdownNo').addEventListener('click', closeShutdownModal);
+$('shutdownYes').addEventListener('click', shutdownServer);
 $('dim').addEventListener('input', (event) => $('dimValue').textContent = `${event.target.value}%`);
 $('quality').addEventListener('input', (event) => $('qualityValue').textContent = event.target.value);
 $('device').addEventListener('change', updateOutputSpec);
