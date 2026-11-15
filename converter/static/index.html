@@ -9,18 +9,20 @@
 <body>
   <main class="shell">
     <header class="masthead">
-      <button id="stopButton" class="shutdown-button" type="button">Stop server</button>
       <div class="frog-mark" aria-hidden="true">🐸</div>
       <div>
         <p class="eyebrow">TREEFROGUI TOOLKIT</p>
         <h1>FroggyThemes <span>Converter</span></h1>
         <p class="lede">Turn an already-extracted theme folder into optimized TreeFrogUI background and icon packs.</p>
       </div>
-      <div id="dependencyBadge" class="badge checking">Checking tools…</div>
+      <div class="masthead-status">
+        <button id="stopButton" class="shutdown-button" type="button">Stop server</button>
+        <div id="dependencyBadge" class="badge checking">Checking tools…</div>
+      </div>
     </header>
 
     <section class="notice">
-      <strong>Before you begin:</strong> Python 3.9+ runs this app, and ImageMagick 6/7 performs the image conversion. A modern browser is also required. See <a href="/docs" target="_blank" rel="noreferrer">Dependency notes</a> if the tool badge reports a missing dependency.<br>
+      <strong>Before you begin:</strong> Python 3.9+ runs this app, and ImageMagick 6/7 performs the image conversion. A modern browser is also required. See <a href="/docs" target="_blank" rel="noreferrer">Dependency notes</a> if the tool badge reports a missing dependency.<br><br>
       <strong>Local and private.</strong> This utility runs on your computer. Artwork is not uploaded. Select a folder that has already been extracted; archive extraction is intentionally outside this tool.
     </section>
 
