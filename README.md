@@ -30,6 +30,20 @@ native-size background JPEGs for the selected device family and optimized
 system-icon PNGs while showing scan and conversion progress. See
 [`converter/README.md`](converter/README.md).
 
+### Using the converter on another computer
+
+Download the repository from GitHub and extract it. The converter requires
+Python 3.9 or newer, ImageMagick 6 or 7 with PNG/JPEG support, and a modern
+web browser. No Node.js, npm, Python packages, or internet connection are
+needed after installation. The theme archive must already be extracted into a
+folder before it is selected; the converter does not unpack archives.
+
+From a terminal opened in the repository, run `python3 converter/server.py` on
+Linux/macOS or `py converter/server.py` in Windows PowerShell, then open
+`http://127.0.0.1:8765`. The converter's startup badge checks ImageMagick and
+the full dependency instructions are available in
+[`converter/README.md`](converter/README.md).
+
 ## Build
 
 The target is the Datafrog MIPS32r2 toolchain with FreeType, JPEG, and PNG

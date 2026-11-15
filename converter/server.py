@@ -13,6 +13,7 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
 
@@ -87,7 +88,7 @@ def read_aliases() -> list[str]:
     ]
 
 
-def magick_command() -> str | None:
+def magick_command() -> Optional[str]:
     configured = os.environ.get("FROGGYTHEMES_MAGICK")
     if configured and shutil.which(configured):
         return configured
@@ -136,7 +137,7 @@ def safe_pack_name(value: str) -> str:
     return cleaned[:80]
 
 
-def candidate_for_name(files: list[Path], names: list[str]) -> Path | None:
+def candidate_for_name(files: list[Path], names: list[str]) -> Optional[Path]:
     wanted = {name.casefold() for name in names if name}
     for path in files:
         if path.stem.casefold() in wanted:
@@ -144,7 +145,7 @@ def candidate_for_name(files: list[Path], names: list[str]) -> Path | None:
     return None
 
 
-def icon_candidate(files: list[Path], alias: str, source_name: str) -> Path | None:
+def icon_candidate(files: list[Path], alias: str, source_name: str) -> Optional[Path]:
     exact = candidate_for_name(files, [alias, source_name])
     if exact:
         return exact
