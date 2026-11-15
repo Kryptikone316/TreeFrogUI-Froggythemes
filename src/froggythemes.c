@@ -12,6 +12,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <jpeglib.h>
@@ -28,7 +29,9 @@
 #define PACK_DIR SDCARD "/frogui/theme-packs"
 #define ICON_PACK_DIR SDCARD "/frogui/icon-packs"
 #define SETTINGS SDCARD "/frogui/settings.txt"
-#define ACTIVE_ICON SDCARD "/roms/ports/froggythemes/active-frog.rgba"
+#define CATALOG_LOG SDCARD "/frogui/froggythemes-catalog.log"
+#define ACTIVE_ICON_APP  SDCARD "/cubegm/froggythemes/active-frog.rgba"
+#define ACTIVE_ICON_PORT SDCARD "/roms/ports/froggythemes/active-frog.rgba"
 #define MAX_PACKS 64
 #define MAX_NAME 96
 #define ACTIVE_ICON_SIZE 32
@@ -46,6 +49,13 @@ enum {
     TAB_COUNT
 };
 
+enum sort_mode {
+    SORT_ASCENDING,
+    SORT_DESCENDING,
+    SORT_LAST_ADDED,
+    SORT_MODE_COUNT
+};
+
 struct preset {
     const char *name;
     const char *theme;
@@ -56,7 +66,6 @@ struct preset {
 
 #define BASE_PRESET_COUNT 3
 #define MAX_PRESETS (BASE_PRESET_COUNT + MAX_PACKS)
-#define PRESET_SECTION_HEIGHT 24
 
 static const struct preset g_base_presets[BASE_PRESET_COUNT] = {
     { "Base Vertical", "Catppuccin Mocha", "", "vertical", "Pixel_by_Jeltron" },
@@ -68,6 +77,7 @@ static struct preset g_presets[MAX_PRESETS];
 static char g_preset_names[MAX_PACKS][MAX_NAME];
 static char g_preset_theme_packs[MAX_PACKS][MAX_NAME];
 static char g_preset_icon_packs[MAX_PACKS][MAX_NAME];
+static long long g_preset_added[MAX_PRESETS];
 static int g_preset_count;
 #define PRESET_COUNT (g_preset_count)
 
@@ -82,10 +92,12 @@ static volatile int g_quit;
 static char g_status[160];
 static int g_status_ok;
 static char g_packs[MAX_PACKS][MAX_NAME];
+static long long g_pack_added[MAX_PACKS];
 static int g_pack_count;
 static int g_selected;
 static char g_current[MAX_NAME];
 static char g_icon_packs[MAX_PACKS][MAX_NAME];
+static long long g_icon_added[MAX_PACKS];
 static int g_icon_count;
 static int g_icon_selected;
 static char g_current_icon[MAX_NAME];
@@ -104,6 +116,30 @@ static char g_icon_preview_pack[MAX_NAME];
 static int g_preview_mode = -1;
 static unsigned char g_active_icon[ACTIVE_ICON_SIZE * ACTIVE_ICON_SIZE * 4];
 static int g_active_icon_loaded;
+static enum sort_mode g_sort_mode = SORT_ASCENDING;
+
+struct catalog_record {
+    char kind;
+    char name[MAX_NAME];
+    long long added;
+    int active;
+};
+
+#define CATALOG_RECORD_MAX (MAX_PACKS * 2)
+static struct catalog_record g_catalog[CATALOG_RECORD_MAX];
+static int g_catalog_count;
+static int g_catalog_dirty;
+static int g_theme_scan_ok;
+static int g_icon_scan_ok;
+
+static const char *sort_mode_name(void)
+{
+    switch (g_sort_mode) {
+    case SORT_DESCENDING: return "Z-A";
+    case SORT_LAST_ADDED: return "LAST ADDED";
+    default:              return "A-Z";
+    }
+}
 
 static uint16_t rgb(int r, int g, int b)
 {
@@ -228,9 +264,15 @@ static void fallback_active_icon(int cx, int cy)
     line(cx - 1, cy + 4, cx + 6, cy - 5, white);
 }
 
+static const char *active_icon_path(void)
+{
+    if (access(ACTIVE_ICON_APP, R_OK) == 0) return ACTIVE_ICON_APP;
+    return ACTIVE_ICON_PORT;
+}
+
 static int load_active_icon(void)
 {
-    FILE *file = fopen(ACTIVE_ICON, "rb");
+    FILE *file = fopen(active_icon_path(), "rb");
     size_t expected = sizeof(g_active_icon);
     if (!file) return -1;
     if (fread(g_active_icon, 1, expected, file) != expected) {
@@ -792,9 +834,106 @@ static int preset_is_active(const struct preset *preset)
             (!g_current_backgrounds[0] || strcmp(g_current_backgrounds, "off") == 0));
 }
 
-static int pack_compare(const void *a, const void *b)
+static void format_pack_name(const char *raw, char *out, size_t out_size);
+
+static int catalog_find(char kind, const char *name)
 {
-    return strcasecmp((const char *)a, (const char *)b);
+    int i;
+    for (i = 0; i < g_catalog_count; i++)
+        if (g_catalog[i].kind == kind && strcmp(g_catalog[i].name, name) == 0)
+            return i;
+    return -1;
+}
+
+static void catalog_load(void)
+{
+    FILE *file;
+    char line[256];
+    char kind;
+    long long added;
+    char name[MAX_NAME];
+
+    g_catalog_count = 0;
+    g_catalog_dirty = 0;
+    file = fopen(CATALOG_LOG, "r");
+    if (!file) return;
+    while (fgets(line, sizeof(line), file) && g_catalog_count < CATALOG_RECORD_MAX) {
+        if (sscanf(line, "%c%*[\t ]%lld%*[\t ]%95[^\r\n]",
+                   &kind, &added, name) != 3)
+            continue;
+        if (kind != 'T' && kind != 'I') continue;
+        if (catalog_find(kind, name) >= 0) continue;
+        g_catalog[g_catalog_count].kind = kind;
+        snprintf(g_catalog[g_catalog_count].name, MAX_NAME, "%s", name);
+        g_catalog[g_catalog_count].added = added > 0 ? added : 0;
+        g_catalog[g_catalog_count].active = 0;
+        g_catalog_count++;
+    }
+    fclose(file);
+}
+
+static void catalog_save(void)
+{
+    char tmp_path[sizeof(CATALOG_LOG) + 5];
+    FILE *file;
+    int i;
+
+    if (!g_catalog_dirty) return;
+    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", CATALOG_LOG);
+    file = fopen(tmp_path, "w");
+    if (!file) return;
+    fputs("# kind<TAB>added-unix-time<TAB>folder\n", file);
+    for (i = 0; i < g_catalog_count; i++)
+        if (g_catalog[i].active)
+            fprintf(file, "%c\t%lld\t%s\n", g_catalog[i].kind,
+                    g_catalog[i].added, g_catalog[i].name);
+    if (fclose(file) != 0 || rename(tmp_path, CATALOG_LOG) != 0) {
+        unlink(tmp_path);
+        return;
+    }
+    sync();
+    g_catalog_dirty = 0;
+}
+
+static long long catalog_stamp(char kind, const char *name, const char *path)
+{
+    struct stat st;
+    int index = catalog_find(kind, name);
+    long long added;
+
+    if (index >= 0) {
+        g_catalog[index].active = 1;
+        return g_catalog[index].added;
+    }
+    /* Existing installations without a ledger get a useful bootstrap order
+     * from directory mtime. Packs discovered after that are stamped now. */
+    added = (long long)time(NULL);
+    if (access(CATALOG_LOG, F_OK) != 0 && stat(path, &st) == 0 && st.st_mtime > 0)
+        added = (long long)st.st_mtime;
+    if (g_catalog_count >= CATALOG_RECORD_MAX) return added;
+    g_catalog[g_catalog_count].kind = kind;
+    snprintf(g_catalog[g_catalog_count].name, MAX_NAME, "%s", name);
+    g_catalog[g_catalog_count].added = added;
+    g_catalog[g_catalog_count].active = 1;
+    g_catalog_count++;
+    g_catalog_dirty = 1;
+    return added;
+}
+
+static void catalog_prune(void)
+{
+    int i, out = 0;
+    for (i = 0; i < g_catalog_count; i++) {
+        if (!g_catalog[i].active &&
+            ((g_catalog[i].kind == 'T' && g_theme_scan_ok) ||
+             (g_catalog[i].kind == 'I' && g_icon_scan_ok))) {
+            g_catalog_dirty = 1;
+            continue;
+        }
+        if (out != i) g_catalog[out] = g_catalog[i];
+        out++;
+    }
+    g_catalog_count = out;
 }
 
 /* Folder names are deliberately stable because they are written to
@@ -816,6 +955,49 @@ static void format_pack_name(const char *raw, char *out, size_t out_size)
         snprintf(out, out_size, "System Default");
 }
 
+static int display_name_compare(const char *a, const char *b)
+{
+    char ad[MAX_NAME], bd[MAX_NAME];
+    int result;
+
+    format_pack_name(a, ad, sizeof(ad));
+    format_pack_name(b, bd, sizeof(bd));
+    result = strcasecmp(ad, bd);
+    if (result == 0) result = strcasecmp(a, b);
+    return result;
+}
+
+static int sort_compare(const char *a, const char *b,
+                        long long added_a, long long added_b)
+{
+    int result;
+
+    if (g_sort_mode == SORT_LAST_ADDED && added_a != added_b)
+        return added_a > added_b ? -1 : 1;
+    result = display_name_compare(a, b);
+    if (g_sort_mode == SORT_DESCENDING) result = -result;
+    return result;
+}
+
+static void sort_pack_rows(char names[MAX_PACKS][MAX_NAME],
+                           long long added[MAX_PACKS], int count)
+{
+    int i;
+    for (i = 1; i < count; i++) {
+        char name[MAX_NAME];
+        long long stamp = added[i];
+        int j = i - 1;
+        snprintf(name, sizeof(name), "%s", names[i]);
+        while (j >= 0 && sort_compare(names[j], name, added[j], stamp) > 0) {
+            snprintf(names[j + 1], MAX_NAME, "%s", names[j]);
+            added[j + 1] = added[j];
+            j--;
+        }
+        snprintf(names[j + 1], MAX_NAME, "%s", name);
+        added[j + 1] = stamp;
+    }
+}
+
 static int pack_name_exists(char names[MAX_PACKS][MAX_NAME], int count, const char *name)
 {
     int i;
@@ -830,8 +1012,10 @@ static void build_presets(void)
     int i, pack_slot = 0;
 
     g_preset_count = 0;
-    for (i = 0; i < BASE_PRESET_COUNT; i++)
+    for (i = 0; i < BASE_PRESET_COUNT; i++) {
         g_presets[g_preset_count++] = g_base_presets[i];
+        g_preset_added[g_preset_count - 1] = 0;
+    }
 
     /* A pack preset is registered only when the exact same folder name is
      * present in both catalogs.  One-sided packs remain independently
@@ -848,41 +1032,119 @@ static void build_presets(void)
         g_presets[g_preset_count].theme_pack = g_preset_theme_packs[pack_slot];
         g_presets[g_preset_count].style = "system";
         g_presets[g_preset_count].icon_pack = g_preset_icon_packs[pack_slot];
+        g_preset_added[g_preset_count] = g_pack_added[i];
         g_preset_count++;
         pack_slot++;
     }
 }
 
-static int scan_pack_dir(const char *root, char names[MAX_PACKS][MAX_NAME])
+static void sort_preset_rows(void)
+{
+    int i;
+    for (i = 1; i < g_preset_count; i++) {
+        struct preset preset = g_presets[i];
+        long long stamp = g_preset_added[i];
+        int j = i - 1;
+        while (j >= 0 &&
+               sort_compare(g_presets[j].name, preset.name,
+                            g_preset_added[j], stamp) > 0) {
+            g_presets[j + 1] = g_presets[j];
+            g_preset_added[j + 1] = g_preset_added[j];
+            j--;
+        }
+        g_presets[j + 1] = preset;
+        g_preset_added[j + 1] = stamp;
+    }
+}
+
+static int scan_pack_dir(const char *root, char names[MAX_PACKS][MAX_NAME],
+                         long long added[MAX_PACKS], char kind)
 {
     DIR *dir = opendir(root);
     struct dirent *entry;
     int count = 0;
     if (!dir) return 0;
+    if (kind == 'T') g_theme_scan_ok = 1;
+    if (kind == 'I') g_icon_scan_ok = 1;
     while ((entry = readdir(dir)) && count < MAX_PACKS) {
         char path[512];
         struct stat st;
         if (entry->d_name[0] == '.') continue;
         snprintf(path, sizeof(path), "%s/%s", root, entry->d_name);
         if (stat(path, &st) != 0 || !S_ISDIR(st.st_mode)) continue;
-        snprintf(names[count++], MAX_NAME, "%s", entry->d_name);
+        snprintf(names[count], MAX_NAME, "%s", entry->d_name);
+        added[count] = catalog_stamp(kind, entry->d_name, path);
+        count++;
     }
     closedir(dir);
-    qsort(names, (size_t)count, sizeof(names[0]), pack_compare);
     return count;
 }
 
 static void scan_packs(void)
 {
-    g_pack_count = scan_pack_dir(PACK_DIR, g_packs);
-    g_icon_count = scan_pack_dir(ICON_PACK_DIR, g_icon_packs);
+    catalog_load();
+    g_theme_scan_ok = 0;
+    g_icon_scan_ok = 0;
+    g_pack_count = scan_pack_dir(PACK_DIR, g_packs, g_pack_added, 'T');
+    g_icon_count = scan_pack_dir(ICON_PACK_DIR, g_icon_packs, g_icon_added, 'I');
     if (g_icon_count < MAX_PACKS &&
         !pack_name_exists(g_icon_packs, g_icon_count, "default")) {
         snprintf(g_icon_packs[g_icon_count++], MAX_NAME, "default");
-        qsort(g_icon_packs, (size_t)g_icon_count,
-              sizeof(g_icon_packs[0]), pack_compare);
+        g_icon_added[g_icon_count - 1] = 0;
     }
+    sort_pack_rows(g_packs, g_pack_added, g_pack_count);
+    sort_pack_rows(g_icon_packs, g_icon_added, g_icon_count);
     build_presets();
+    sort_preset_rows();
+    catalog_prune();
+    catalog_save();
+}
+
+static int find_pack_index(char names[MAX_PACKS][MAX_NAME], int count,
+                           const char *wanted)
+{
+    int i;
+    if (!wanted) return 0;
+    for (i = 0; i < count; i++)
+        if (strcmp(names[i], wanted) == 0) return i;
+    return 0;
+}
+
+static int find_preset_index(const char *wanted)
+{
+    int i;
+    if (!wanted) return 0;
+    for (i = 0; i < g_preset_count; i++)
+        if (strcmp(g_presets[i].name, wanted) == 0) return i;
+    return 0;
+}
+
+static void cycle_sort_mode(void)
+{
+    char selected_pack[MAX_NAME] = "";
+    char selected_icon[MAX_NAME] = "";
+    char selected_preset[MAX_NAME] = "";
+
+    if (g_selected >= 0 && g_selected < g_pack_count)
+        snprintf(selected_pack, sizeof(selected_pack), "%s", g_packs[g_selected]);
+    if (g_icon_selected >= 0 && g_icon_selected < g_icon_count)
+        snprintf(selected_icon, sizeof(selected_icon), "%s",
+                 g_icon_packs[g_icon_selected]);
+    if (g_preset_selected >= 0 && g_preset_selected < g_preset_count)
+        snprintf(selected_preset, sizeof(selected_preset), "%s",
+                 g_presets[g_preset_selected].name);
+
+    g_sort_mode = (enum sort_mode)((g_sort_mode + 1) % SORT_MODE_COUNT);
+    sort_pack_rows(g_packs, g_pack_added, g_pack_count);
+    sort_pack_rows(g_icon_packs, g_icon_added, g_icon_count);
+    build_presets();
+    sort_preset_rows();
+    g_selected = find_pack_index(g_packs, g_pack_count, selected_pack);
+    g_icon_selected = find_pack_index(g_icon_packs, g_icon_count, selected_icon);
+    g_preset_selected = find_preset_index(selected_preset);
+    g_preview_valid = 0;
+    g_icon_preview_valid = 0;
+    g_preview_mode = -1;
 }
 
 static int load_font(void)
@@ -954,28 +1216,21 @@ static void draw_screen(void)
         snprintf(count_line, sizeof(count_line), "%d/%d", item_count ? selected_item + 1 : 0,
                  item_count);
         text_fit(g_list_x + g_list_w - 54, 78, 54, muted, count_line);
+    } else {
+        snprintf(count_line, sizeof(count_line), "%d presets", item_count);
+        text(g_list_x, 78, muted, count_line);
     }
+    snprintf(count_line, sizeof(count_line), "SORT: %s", sort_mode_name());
+    text_fit(g_preview_x, 78, g_preview_w, muted, count_line);
     if (selected_item >= visible) first = selected_item - visible + 1;
     if (g_tab == TAB_PRESETS) {
-        int header_y = list_y - 26;
-        text(g_list_x, header_y, muted,
-             first < BASE_PRESET_COUNT ? "BASE PRESETS" : "PACK PRESETS");
-        fill_rect(g_list_x, header_y + 8, g_list_w, 1, rgb(54, 66, 76));
-        if (first < BASE_PRESET_COUNT && first + visible > BASE_PRESET_COUNT) {
-            header_y = list_y + (BASE_PRESET_COUNT - first) * row_h +
-                       PRESET_SECTION_HEIGHT - 26;
-            text(g_list_x, header_y, muted, "PACK PRESETS");
-            fill_rect(g_list_x, header_y + 8, g_list_w, 1,
-                      rgb(54, 66, 76));
-        }
+        text(g_list_x, list_y - 26, muted, "PRESET CATALOG");
+        fill_rect(g_list_x, list_y - 18, g_list_w, 1, rgb(54, 66, 76));
     }
     for (i = first; i < item_count && i < first + visible; i++) {
         int y = list_y + (i - first) * row_h;
         const char *item_name;
         int is_current;
-        if (g_tab == TAB_PRESETS && first < BASE_PRESET_COUNT &&
-            i >= BASE_PRESET_COUNT)
-            y += PRESET_SECTION_HEIGHT;
         if (g_tab == TAB_BACKGROUNDS) item_name = g_packs[i];
         else if (g_tab == TAB_ICONS) item_name = g_icon_packs[i];
         else item_name = g_presets[i].name;
@@ -1073,7 +1328,8 @@ static void draw_screen(void)
     if (g_status[0]) {
         text_fit(24, g_h - 72, g_w - 48, g_status_ok ? accent : rgb(236, 125, 110), g_status);
     }
-    snprintf(line, sizeof(line), "L/R tabs  UP/DOWN select  A apply  B back  SEL+START exit");
+    snprintf(line, sizeof(line), "L/R tabs  UP/DOWN select  A apply  Y sort (%s)  B back  SEL+START exit",
+             sort_mode_name());
     text_fit(24, g_h - 28, g_w - 48, muted, line);
 }
 
@@ -1160,7 +1416,8 @@ int main(void)
         unsigned press = held & ~previous;
         int item_count;
         previous = held;
-        if (press & ((1u << KEY_B) | (1u << KEY_Y))) g_quit = 1;
+        if (press & (1u << KEY_B)) g_quit = 1;
+        if (press & (1u << KEY_Y)) cycle_sort_mode();
         if ((held & (1u << KEY_SELECT)) && (held & (1u << KEY_START))) g_quit = 1;
         if (press & ((1u << KEY_LEFT) | (1u << KEY_L1)))
             g_tab = (g_tab + TAB_COUNT - 1) % TAB_COUNT;

@@ -5,9 +5,9 @@ devices. It switches between theme and system-icon folders already installed
 on the SD card; it does not rewrite or duplicate the selected artwork.
 
 The app provides independent Backgrounds and Icons tabs, matching presets, a
-reset-to-base-layout section, previews, and an active-pack marker. Applying an
-icon pack selects TreeFrogUI's System View so the icons are visible when the
-frontend returns.
+reset-to-base-layout section, previews, an active-pack marker, and a shared
+catalog sort mode. Applying an icon pack selects TreeFrogUI's System View so
+the icons are visible when the frontend returns.
 
 ## Repository layout
 
@@ -98,9 +98,18 @@ an icon-only pack appears under Icons.
 
 ## Controls
 
-Left/Right or L1/R1 changes tabs; Up/Down selects; A applies; B/Y returns; and
-Select+Start exits. The illuminated frog marks the item currently active in
-TreeFrogUI.
+Left/Right or L1/R1 changes tabs; Up/Down selects; A applies; Y cycles the
+catalog order; B returns; and Select+Start exits. Y cycles **A-Z**, **Z-A**,
+then **Last Added** (newest first) for Themes, Icons, and Presets. The active
+sort mode is shown in the footer and is reset to A-Z when the app restarts.
+
+FroggyThemes records pack discovery times in
+`/mnt/sdcard/frogui/froggythemes-catalog.log`. Existing installations are
+bootstrapped from directory timestamps the first time the ledger is created;
+newly discovered packs are stamped when FroggyThemes sees them. Missing or
+unreadable timestamps fall back to deterministic alphabetical order.
+
+The illuminated frog marks the item currently active in TreeFrogUI.
 
 ## Licensing
 

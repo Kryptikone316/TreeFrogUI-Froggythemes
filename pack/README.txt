@@ -5,10 +5,12 @@ ARM copies of those generic library names under cubegm/lib. It also carries
 libjpeg for the theme preview pane, libpng for the icon contact sheet, and a
 small RGBA frog marker for the active theme.
 
-Open Froggythemes in the Ports list.
+Open FroggyThemes from the TreeFrogUI Apps view when installed as the bundled
+application. The standalone Ports launcher remains supported for transition
+and manual installations.
 Left/Right or L1/R1 switches between background, system icon, and preset tabs.
-Up/Down selects, A applies the active tab's setting, B or Y returns, and
-Select+Start exits.
+Up/Down selects, A applies the active tab's setting, Y cycles A-Z, Z-A, and
+Last Added sorting, B returns, and Select+Start exits.
 
 The selected background preview is shown on the right side of the screen. The
 icon tab shows a six-icon contact sheet from the selected pack.
@@ -23,5 +25,8 @@ Themes and icons can still be selected independently, and presets never delete
 installed packs.
 The illuminated frog before a pack name marks the item currently used by
 TreeFrogUI.
+
+Pack discovery timestamps are kept in
+`/mnt/sdcard/frogui/froggythemes-catalog.log`; the default order is A-Z.
 
 The app uses the existing folders in frogui/theme-packs and updates frogui/settings.txt.
