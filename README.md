@@ -18,11 +18,16 @@ frontend returns.
 | `theme-packs/` | Optimized TreeFrogUI background packs |
 | `icon-packs/` | Optimized TreeFrogUI system-icon packs |
 | `sources/` | Provenance, license status, and fork plan for imported artwork |
+| `converter/` | Local browser-based converter for already-extracted source folders |
 
 PrettyTreeFrog is the first included pack. Its backgrounds and system icons are
 original project artwork released under CC0 1.0 Universal. Third-party packs
 remain outside the distributable set until their upstream license and source
 history are verified.
+
+The standalone converter runs locally with Python and ImageMagick. It creates
+854×480 background JPEGs and optimized system-icon PNGs while showing scan and
+conversion progress. See [`converter/README.md`](converter/README.md).
 
 ## Build
 

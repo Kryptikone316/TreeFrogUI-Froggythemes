@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FroggyThemes Converter</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div class="frog-mark" aria-hidden="true">🐸</div>
+      <div>
+        <p class="eyebrow">TREEFROGUI TOOLKIT</p>
+        <h1>FroggyThemes <span>Converter</span></h1>
+        <p class="lede">Turn an already-extracted theme folder into optimized TreeFrogUI background and icon packs.</p>
+      </div>
+      <div id="dependencyBadge" class="badge checking">Checking tools…</div>
+    </header>
+
+    <section class="notice">
+      <strong>Local and private.</strong> This utility runs on your computer. Artwork is not uploaded. Select a folder that has already been extracted; archive extraction is intentionally outside this tool.
+    </section>
+
+    <nav class="steps" aria-label="Conversion steps">
+      <button class="step active" data-step="source"><span>1</span> Source</button>
+      <button class="step" data-step="settings"><span>2</span> Settings</button>
+      <button class="step" data-step="progress"><span>3</span> Convert</button>
+    </nav>
+
+    <section id="source" class="panel active-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">STEP ONE</p>
+          <h2>Choose the extracted source</h2>
+        </div>
+        <button id="inspectButton" class="button primary">Scan folder</button>
+      </div>
+
+      <label class="field-label" for="sourceRoot">Source folder</label>
+      <div class="path-row">
+        <input id="sourceRoot" type="text" placeholder="/path/to/an/extracted/theme" autocomplete="off">
+        <button id="browseButton" class="button secondary">Browse</button>
+      </div>
+      <p class="hint">The browser interface and conversion worker run together locally, so this is a path on this computer—not a browser upload.</p>
+
+      <div id="browser" class="browser hidden">
+        <div class="browser-toolbar">
+          <button id="parentButton" class="button tiny">↑ Parent</button>
+          <code id="browsePath">—</code>
+        </div>
+        <div id="browserEntries" class="browser-entries"></div>
+      </div>
+
+      <div id="inspection" class="inspection hidden">
+        <div class="inspection-summary">
+          <div><span id="imageCount">0</span><small>images found</small></div>
+          <div><span id="folderCount">0</span><small>art folders</small></div>
+        </div>
+        <div class="source-grid">
+          <div>
+            <label class="field-label" for="backgroundSource">Main background image</label>
+            <select id="backgroundSource"><option value="">Choose after scanning…</option></select>
+            <p class="hint">Used for <code>main.jpg</code>. The converter resizes, darkens, flattens, and strips metadata.</p>
+          </div>
+          <div>
+            <label class="field-label" for="artRoot">System artwork folder <em>optional</em></label>
+            <select id="artRoot"><option value="">No per-system artwork</option></select>
+            <p class="hint">The worker matches the shared TreeFrogUI system alias map and skips unmatched files.</p>
+          </div>
+          <div>
+            <label class="field-label" for="iconRoot">Icon artwork folder <em>optional</em></label>
+            <select id="iconRoot"><option value="">Use no icon pack</option></select>
+            <p class="hint">Icon files are trimmed and normalized to a maximum of 160×130 PNG.</p>
+          </div>
+        </div>
+        <div id="previewCard" class="preview-card hidden">
+          <div class="preview-frame"><img id="previewImage" alt="Selected source preview"></div>
+          <div><p class="eyebrow">SOURCE PREVIEW</p><p id="previewName">Select an image to preview it.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="settings" class="panel hidden">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">STEP TWO</p>
+          <h2>Prepare the pack</h2>
+        </div>
+        <button id="convertButton" class="button primary">Start conversion</button>
+      </div>
+      <div class="settings-grid">
+        <div>
+          <label class="field-label" for="packName">Pack name</label>
+          <input id="packName" type="text" placeholder="MyTheme" value="MyTheme">
+          <p class="hint">Letters, numbers, spaces, hyphens, underscores, and periods are allowed.</p>
+        </div>
+        <div>
+          <label class="field-label" for="mode">Create</label>
+          <select id="mode">
+            <option value="both">Background + icon packs</option>
+            <option value="backgrounds">Background pack only</option>
+            <option value="icons">Icon pack only</option>
+          </select>
+          <p class="hint">You can mix and match packs later in TreeFrogUI.</p>
+        </div>
+        <div>
+          <label class="field-label" for="outputRoot">Output staging folder</label>
+          <input id="outputRoot" type="text" value="converter/output" autocomplete="off">
+          <p class="hint">The app creates <code>theme-packs/</code> and <code>icon-packs/</code> here.</p>
+        </div>
+        <div>
+          <label class="field-label" for="sourceUrl">Source URL <em>optional</em></label>
+          <input id="sourceUrl" type="text" placeholder="https://github.com/example/theme" autocomplete="off">
+          <p class="hint">Recorded in SOURCE-NOTES.txt for future attribution.</p>
+        </div>
+        <div>
+          <label class="field-label" for="licenseNote">License note <em>optional</em></label>
+          <input id="licenseNote" type="text" placeholder="Review the upstream license before redistribution" autocomplete="off">
+          <p class="hint">This records your note; it does not change the artwork license.</p>
+        </div>
+        <div>
+          <label class="field-label" for="dim">Background dimming <output id="dimValue">35%</output></label>
+          <input id="dim" type="range" min="0" max="70" value="35">
+          <p class="hint">A darker image keeps TreeFrogUI text readable.</p>
+        </div>
+        <div>
+          <label class="field-label" for="quality">JPEG quality <output id="qualityValue">78</output></label>
+          <input id="quality" type="range" min="60" max="95" value="78">
+          <p class="hint">The default balances clarity and front-end loading time.</p>
+        </div>
+        <div class="check-row">
+          <input id="overwrite" type="checkbox">
+          <label for="overwrite"><strong>Replace a generated pack</strong><span>Only a folder containing FroggyThemes conversion notes can be replaced.</span></label>
+        </div>
+      </div>
+      <div id="validation" class="validation" role="status"></div>
+    </section>
+
+    <section id="progress" class="panel hidden">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">STEP THREE</p>
+          <h2 id="progressTitle">Ready to convert</h2>
+        </div>
+        <button id="cancelButton" class="button danger hidden">Cancel</button>
+      </div>
+      <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+      <div class="progress-meta"><span id="progressCount">0 / 0</span><span id="progressPercent">0%</span></div>
+      <pre id="log" class="log">Conversion messages will appear here.</pre>
+      <div id="result" class="result hidden"></div>
+    </section>
+
+    <footer>
+      <span>854×480 RGB backgrounds · ≤160×130 optimized icons</span>
+      <a href="/docs" target="_blank" rel="noreferrer">Dependency notes</a>
+    </footer>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
