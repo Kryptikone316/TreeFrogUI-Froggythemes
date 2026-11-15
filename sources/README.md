@@ -4,6 +4,9 @@ This directory records where imported artwork came from and whether it is
 cleared for redistribution. The source theme archives remain in the local
 development workspace; they are not silently relicensed by this repository.
 
+The current source forks and pinned commits are listed in
+[`forks.md`](forks.md).
+
 Statuses:
 
 - **Included**: pack is present here and has a license/attribution notice.
